@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHPB Data Processor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            display: flex;
+            height: 100vh;
+            background-color: #f5f7fa;
+        }
+
+        /* 左侧控制面板 */
+        .control-panel {
+            width: 18%;
+            background: white;
+            padding: 20px;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+
+        .panel-section {
+            margin-bottom: 20px;
+        }
+
+        .panel-section h3 {
+            margin-bottom: 12px;
+            color: #2c3e50;
+            font-size: 16px;
+        }
+
+        button, input[type="file"], select {
+            width: 100%;
+            padding: 10px;
+            margin: 6px 0;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #fff;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #e9ecef;
+        }
+
+        button.primary {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+        }
+
+        button.primary:hover {
+            background-color: #45a049;
+        }
+
+        .file-input-container {
+            position: relative;
+        }
+
+        .file-input-container input[type="file"] {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+
+        .selected-file {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        /* 图表区域 */
+        .chart-container {
+            width: 75%;
+            position: relative;
+            background: #fafafa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #chart {
+            width: 100%;
+            height: 100%;
+            min-height: 400px;
+            background: white;
+            border: 1px solid #eee;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        /* 悬浮操作按钮 */
+        .floating-buttons {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .action-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: white;
+            border: 1px solid #ccc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            transition: background 0.2s;
+        }
+
+        .action-btn:hover {
+            background: #f0f0f0;
+        }
+
+        .action-btn i {
+            font-size: 16px;
+            color: #333;
+        }
+
+        /* 样品管理部分 */
+        .sample-management {
+            margin-top: 20px;
+        }
+
+        .sample-management .new-sample-button {
+            width: 100%;
+            padding: 10px;
+            background: #ff9800;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .sample-management .new-sample-button:hover {
+            background: #e68a00;
+        }
+
+        .sample-management .new-Hopkinson-button {
+            width: 100%;
+            padding: 10px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .sample-management .new-Hopkinson-button:hover {
+            background: #1f8cdf;
+        }
+
+        .panel-section .calculation-button {
+            width: 100%;
+            padding: 10px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .panel-section .calculation-button:hover {
+            background: #45a049;
+        }
+
+        .sample-display {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f9f9f9;
+            /*border: 1px solid #ddd;*/
+            border-radius: 6px;
+            text-align: center;
+            font-size: 13px;
+            /*font-style: italic;*/
+        }
+
+        /* 状态栏 */
+        .status-bar {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        /* 新建样品模态框样式 */
+        .sample-form-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px;
+            padding: 30px;
+        }
+
+        .sample-form-header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .sample-form-header h2 {
+            color: #2c3e50;
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .sample-form-group {
+            margin-bottom: 20px;
+        }
+
+        .sample-form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #34495e;
+            font-weight: 500;
+        }
+
+        .sample-form-group input, .sample-form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .sample-form-group input:focus, .sample-form-group select:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        .sample-form-row {
+            display: flex;
+            gap: 15px;
+        }
+
+        .sample-form-row .sample-form-group {
+            flex: 1;
+        }
+
+        .sample-button-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-save {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .btn-save:hover {
+            background-color: #45a049;
+        }
+
+        .btn-cancel {
+            background-color: #95a5a6;
+            color: white;
+        }
+
+        .btn-cancel:hover {
+            background-color: #7f8c8d;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- 左侧控制面板 -->
+    <div class="control-panel">
+        <!-- 数据加载 -->
+        <div class="panel-section">
+            <h3>📁 数据加载</h3>
+            <div class="file-input-container">
+                <input type="file" id="incidentFile" accept=".csv,.txt,.dat" />
+                <div id="incidentFileName" class="selected-file">选择入射波文件</div>
+            </div>
+            <div class="file-input-container">
+                <input type="file" id="transmittedFile" accept=".csv,.txt,.dat" />
+                <div id="transmittedFileName" class="selected-file">选择透射波文件</div>
+            </div>
+            <button class="primary" onclick="loadData()">加载数据</button>
+        </div>
+
+        <!-- 参数设置 -->
+        <div class="panel-section sample-management">
+            <h3>⚙️ 参数设置</h3>
+            <button class="new-sample-button" onclick="openNewSampleDialog()">新建样品</button>
+            <div id="sampleDisplay" class="sample-display">无样品信息</div>
+            <button class = "new-Hopkinson-button" onclick="openNewHopkinsonDialog()">新建杆参数</button>
+            <div id="rodParameters" class="sample-display">杆参数：未设置</div>
+        </div>
+
+        <!-- 操作状态 -->
+        <div class="panel-section status-bar">
+            <h3>ℹ️ 操作状态</h3>
+            <p id="status">等待数据加载...</p>
+        </div>
+
+    </div>
+
+    <!-- 中间图表区域 -->
+    <div class="chart-container">
+        <!-- 选项卡控件 -->
+        <div class="chart-tabs" style="position: absolute; top: 0; width: 100%; height: 8%; display: flex; background: #f0f0f0; border-top: 1px solid #ddd;">
+            <button id="wave" class="tab-btn active" onclick="switchChartTab('wave')" style="flex: 1; padding: 10px; border: none; background: #4CAF50; color: white; cursor: pointer;">波形图</button>
+            <button id="fft" class="tab-btn" onclick="switchChartTab('fft')" style="flex: 1; padding: 10px; border: none; background: #e0e0e0; cursor: pointer;">频谱图</button>
+            <button id="crop" class="tab-btn" onclick="switchChartTab('crop')" style="flex: 1; padding: 10px; border: none; background: #e0e0e0; cursor: pointer;">时域对齐</button>
+            <button id="result" class="tab-btn" onclick="switchChartTab('result')" style="flex: 1; padding: 10px; border: none; background: #e0e0e0; cursor: pointer;">计算结果</button>
+        </div>
+
+        <div id="chart" style="position: absolute; top: 8%; left: 0; width: 100%; height: 92%;">
+            <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="background:white;">
+                <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#888">无数据导入</text>
+            </svg>
+        </div>
+
+        <!-- 悬浮按钮 -->
+        <div class="floating-buttons">
+            <div class="action-btn" title="放大" onclick="zoomIn()">
+                <i>🔍+</i>
+            </div>
+            <div class="action-btn" title="缩小" onclick="zoomOut()">
+                <i>🔍−</i>
+            </div>
+            <div class="action-btn" title="拖动模式" onclick="togglePan()">
+                <i>✋</i>
+            </div>
+            <div class="action-btn" title="重置视图" onclick="resetView()">
+                <i>↺</i>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右侧控制面板 -->
+    <div class="control-panel">
+        <!-- 数据滤波 -->
+        <div class="panel-section">
+            <h3>📊 数据计算</h3>
+            <div style="margin-top:10px;">
+                <label for="lowFreqSlider">低频截止 (Hz):</label>
+                <div style="display: flex; align-items: center; margin-top: 5px;">
+                    <input type="range" id="lowFreqSlider" min="0" max="1000000" value="0" oninput="updateLowFreq(this.value)" style="flex: 1;" />
+                    <span id="lowFreqValue" style="margin-left: 10px;">0 Hz</span>
+                </div>
+            </div>
+
+            <div style="margin-top:10px;">
+                <label for="lowFreqSlider">高频截止 (Hz):</label>
+                <div style="display: flex; align-items: center; margin-top: 5px;">
+                    <input type="range" id="highFreqSlider" min="0" max="1000000" value="18000" oninput="updateHighFreq(this.value)" style="flex: 1;" />
+                    <span id="highFreqValue" style="margin-left: 10px;">18000 Hz</span>
+                </div>
+            </div>
+
+            <button onclick="applyFilter()">应用滤波</button>
+            <canvas id="space1" width="266" height="50"></canvas>
+            <button onclick="alignWithTime()">时域对齐</button>
+            <button onclick="alignManually()">手动调整</button>
+
+            <div id = "alignManually" style="margin-top:10px; display:none;">
+                <label for="incManually">入射波调整</label>
+                <div style="display: flex; align-items: center; margin-top: 5px;">
+                    <input type="range" id="incManually" min="0" max="2000" value="1000" oninput="updateInc(this.value)" style="flex: 1;" />
+                </div>
+                <label for="refManually">反射波调整</label>
+                <div style="display: flex; align-items: center; margin-top: 5px;">
+                    <input type="range" id="refManually" min="0" max="2000" value="1000" oninput="updateRef(this.value)" style="flex: 1;" />
+                </div>
+                <label for="transManually">透射波调整</label>
+                <div style="display: flex; align-items: center; margin-top: 5px;">
+                    <input type="range" id="transManually" min="0" max="2000" value="1000" oninput="updateTrans(this.value)"style="flex: 1;" />
+                </div>
+            </div>
+
+            <canvas id="space2" width="266" height="50"></canvas>
+        </div>
+
+        <!-- 数据保存 -->
+        <div class="panel-section">
+            <h3>💾 数据计算与保存</h3>
+                <div class="calculate-method-group">
+                    <label for="calculateMethod">计算方法</label>
+                    <select id="calculateMethod" name="calculateMethod" required>
+                        <option value="incAndTrans">双波法(入射+透射)</option>
+                        <option value="refAndTrans">双波法(反射+透射)</option>
+                        <option value="threeWave">三波法</option>
+                    </select>
+                </div>
+            <button class = calculation-button onclick="startCalculation()">开始计算</button>
+            <progress id="calculationProgress" value="0" max="100" style="margin-top:10px;display:none;"></progress>
+
+            <button onclick="exportResults()">导出结果</button>
+        </div>
+
+    </div>
+
+    <!-- 选择曲线设置模态框 -->
+    <div id="serialModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="sample-form-container">
+                <div class="sample-form-header">
+                    <h2>曲线设置</h2>
+                </div>
+                <form id="serialForm">
+                     <div class="serial-form-group">
+                        <label for="serialType">波类型</label>
+                        <select id="serialType" name="serialType" required>
+                            <option value="inc">入射波</option>
+                            <option value="ref">反射波</option>
+                            <option value="trans">透射波</option>
+                        </select>
+                    </div>
+
+                    <div class="sample-button-group">
+                        <button type="button" class="btn btn-save" onclick="checkSerial()">确认</button>
+                        <button type="button" class="btn btn-cancel" onclick="closeSerial()">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 样品参数设置模态框 -->
+    <div id="sampleModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="sample-form-container">
+                <div class="sample-form-header">
+                    <h2>样品参数设置</h2>
+                    <p>请输入样品详细信息</p>
+                </div>
+
+                <form id="sampleForm">
+                    <div class="sample-form-group">
+                        <label for="sampleNumber">样品编号</label>
+                        <input type="text" id="sampleNumber" name="sampleNumber" placeholder="请输入样品编号" required>
+                    </div>
+                    <div class="sample-form-group">
+                        <label for="sampleName">样品名称</label>
+                        <input type="text" id="sampleName" name="sampleName" placeholder="请输入样品名称" required>
+                    </div>
+                    <div class="sample-form-group">
+                        <label for="sampleMaterial">样品材质</label>
+                        <input type="text" id="sampleMaterial" name="sampleMaterial" placeholder="请输入样品材质" required>
+                    </div>
+
+                    <div class="sample-form-row">
+                        <div class="sample-form-group">
+                            <label for="sampleArea">截面直径ø (mm)</label>
+                            <input type="number" id="sampleArea" name="sampleArea" placeholder="请输入截面积" step="0.01" min="0" required>
+                        </div>
+
+                        <div class="sample-form-group">
+                            <label for="sampleLength">样品长度l (mm)</label>
+                            <input type="number" id="sampleLength" name="sampleLength" placeholder="请输入长度" step="0.01" min="0" required>
+                        </div>
+                    </div>
+
+                    <div class="sample-button-group">
+                        <button type="button" class="btn btn-save" onclick="saveSample()">保存</button>
+                        <button type="button" class="btn btn-cancel" onclick="closeSampleWindow()">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 杆参数设置模态框 -->
+    <div id="hopkinsonModal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="sample-form-container">
+                <div class="sample-form-header">
+                    <h2>杆参数设置</h2>
+                    <p>请输入杆详细信息</p>
+                </div>
+
+                <form id="hopkinsonForm">
+                    <div class="sample-form-group">
+                        <label for="hopkinsonType">杆型号</label>
+                        <select id="hopkinsonType" name="hopkinsonType" required>
+                            <option value="Hopkinson 1">Hopkinson 1</option>
+                        </select>
+                    </div>
+                    <div class="sample-form-group">
+                        <label for="rodMode">杆模式</label>
+                        <select id="rodMode" name="rodMode" required>
+                            <option value="compression">压杆</option>
+                            <option value="stretch">拉杆</option>
+                        </select>
+                    </div>
+
+                    <div class="sample-form-group">
+                        <label for="rodMaterial">杆材质</label>
+                        <input type="text" id="rodMaterial" name="rodMaterial" placeholder="请输入杆材质" required>
+                    </div>
+
+                    <div class="sample-form-row">
+                        <div class="sample-form-group">
+                            <label for="rodDiameter">截面直径ø (mm)</label>
+                            <input type="number" id="rodDiameter" name="rodDiameter" placeholder="请输入截面直径" step="0.01" min="0" required>
+                        </div>
+
+                        <div class="sample-form-group">
+                            <label for="youngsModulus">Young's模量 (GPa)</label>
+                            <input type="number" id="youngsModulus" name="youngsModulus" placeholder="请输入Young's模量" step="1000000" min="0" required>
+                        </div>
+                    </div>
+
+                    <div class="sample-form-group">
+                        <label for="soundVelocity">声速 (m/s)</label>
+                        <input type="number" id="soundVelocity" name="soundVelocity" placeholder="请输入声速" step="1" min="0" required>
+                    </div>
+
+                    <div class="sample-form-group">
+                        <label for="bridgeType">桥类型</label>
+                        <select id="bridgeType" name="bridgeType" required>
+                            <option value="1">1/4桥</option>
+                            <option value="2">半桥</option>
+                            <option value="4">全桥</option>
+                        </select>
+                    </div>
+
+                    <div class="sample-form-row">
+                        <div class="sample-form-group">
+                            <label for="gageFactor">Gage因子</label>
+                            <input type="number" id="gageFactor" name="gageFactor" placeholder="请输入Gage因子" step="0.1" min="0" required>
+                        </div>
+
+                        <div class="sample-form-group">
+                            <label for="excitationVoltage">激励电压 (V)</label>
+                            <input type="number" id="excitationVoltage" name="excitationVoltage" placeholder="请输入激励电压" step="0.1" min="0" required>
+                        </div>
+                    </div>
+
+                    <div class="sample-form-group">
+                        <label for="calibrationFactor">标定系数</label>
+                        <input type="number" id="calibrationFactor" name="calibrationFactor" placeholder="请输入标定系数" step="0.0001" min="0" required>
+                    </div>
+
+                    <div class="sample-form-row">
+                        <div class="sample-form-group">
+                            <label for="poissonRatio">泊松比</label>
+                            <input type="number" id="poissonRatio" name="poissonRatio" placeholder="请输入泊松比" step="0.01" min="0" max="0.5" required>
+                        </div>
+
+                        <div class="sample-form-group">
+                            <label for="dampingCoefficient">阻尼系数</label>
+                            <input type="number" id="dampingCoefficient" name="dampingCoefficient" placeholder="请输入阻尼系数" step="0.01" min="0" required>
+                        </div>
+                    </div>
+
+                    <div class="sample-button-group">
+                        <button type="button" class="btn btn-save" onclick="saveHopkinson()">保存</button>
+                        <button type="button" class="btn btn-cancel" onclick="closeHopkinsonWindow()">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="echarts.js"></script>
+
+
+
+
+
+
+
+
+
+    <script>
+        // 文件选择事件处理
+        document.getElementById('incidentFile').addEventListener('change', function() {
+            const file = this.files[0];
+            document.getElementById('incidentFileName').innerText = file ? file.name : '选择入射波文件';
+            window.incidentFile = file;
+        });
+
+        document.getElementById('transmittedFile').addEventListener('change', function() {
+            const file = this.files[0];
+            document.getElementById('transmittedFileName').innerText = file ? file.name : '选择透射波文件';
+            window.transmittedFile = file;
+        });
+
+
+        // 加载数据
+        function loadData() {
+            const incidentFile = window.incidentFile;
+            const transmittedFile = window.transmittedFile;
+            if (!incidentFile) {
+                alert('请选择入射波文件');
+                return;
+            }
+            if (!transmittedFile) {
+                alert('请选择透射波文件');
+                return;
+            }
+
+            const incidentReader = new FileReader();
+            const transmittedReader = new FileReader();
+
+            incidentReader.onload = function(e) {
+                const incidentContent = e.target.result;
+                transmittedReader.onload = function(e) {
+                    const transmittedContent = e.target.result;
+
+                    pywebview.api.loadData(incidentContent, transmittedContent)
+                        .then(function(result) {
+                            if(result['success']) {
+                                document.getElementById('status').innerText = '数据加载完成';
+                                displayChart(result['data'][1], result['title'][1])
+                                displayChart(result['data'][0], result['title'][0])
+                                switchChartTab("wave");
+                            }else {
+                                document.getElementById('status').innerText = '数据加载失败';
+                            }
+                        })
+                        .catch(function(error) {
+                            console.error("加载数据失败:", error);
+                            document.getElementById('status').innerText = '数据加载失败';
+                        });
+                };
+
+                transmittedReader.readAsText(transmittedFile);
+            };
+
+            incidentReader.readAsText(incidentFile);
+
+            document.getElementById('status').innerText = '正在加载数据...';
+        }
+
+        // 添加全局变量来存储矩形选择相关数据
+        let isCtrlPressed = false;
+        let isDragging = false;
+        let startX = 0;
+        let endX = 0;
+        let selectionRect = null;
+
+        let startIndex = -1;
+        let endIndex = -1;
+
+        // 监听键盘事件
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey || event.key === 'Control') {
+                isCtrlPressed = true;
+
+                enableChartDrag(false);
+            }
+        });
+
+        document.addEventListener('keyup', function(event) {
+            if (event.key === 'Control') {
+                isCtrlPressed = false;
+                enableChartDrag(true);
+            }
+        });
+
+        // 启用图表拖动功能
+        function enableChartDrag(flag) {
+            if (!currentChart)return;
+
+            if(flag){
+                // 恢复原始设置
+                if (window.originalDataZoom) {
+                    currentChart.setOption({
+                        dataZoom: window.originalDataZoom
+                    });
+                }
+            }else{
+                // 禁用内置缩放拖动
+                const option = currentChart.getOption();
+                if (option && option.dataZoom) {
+                    // 保存原始设置
+                    if (!window.originalDataZoom) {
+                        window.originalDataZoom = JSON.parse(JSON.stringify(option.dataZoom));
+                    }
+
+                    // 禁用拖动功能
+                    const newDataZoom = option.dataZoom.map(zoom => {
+                        return {
+                            ...zoom,
+                            disabled: true
+                        };
+                    });
+
+                    currentChart.setOption({
+                        dataZoom: newDataZoom
+                    });
+                }
+            }
+        }
+
+        // 添加矩形选择监听器
+        function addSelectionRectangleListener(chartDom) {
+            // 移除之前可能添加的事件监听器
+            chartDom.removeEventListener('mousedown', handleMouseDown);
+            chartDom.removeEventListener('mousemove', handleMouseMove);
+            chartDom.removeEventListener('mouseup', handleMouseUp);
+
+            // 添加新的事件监听器
+            chartDom.addEventListener('mousedown', handleMouseDown);
+            chartDom.addEventListener('mousemove', handleMouseMove);
+            chartDom.addEventListener('mouseup', handleMouseUp);
+        }
+
+        // 鼠标按下事件处理
+        function handleMouseDown(event) {
+            if (isCtrlPressed && currentChart) {
+                isDragging = true;
+                const chartContainer = document.getElementById('chart');
+                const rect = chartContainer.getBoundingClientRect();
+
+                // 获取相对于图表容器的坐标
+                startX = event.clientX - rect.left;
+
+                // 创建或重置选择矩形
+                if (!selectionRect) {
+                    selectionRect = document.createElement('div');
+                    selectionRect.style.position = 'absolute';
+                    selectionRect.style.backgroundColor = 'rgba(0, 123, 255, 0.3)';
+                    selectionRect.style.border = '1px solid rgba(0, 123, 255, 0.8)';
+                    selectionRect.style.pointerEvents = 'none';
+                    chartContainer.appendChild(selectionRect);
+                }
+
+                // 设置初始位置和尺寸
+                selectionRect.style.left = startX + 'px';
+                selectionRect.style.top = '100px';
+                selectionRect.style.width = '0px';
+                selectionRect.style.height = chartContainer.clientHeight - 150 + 'px';
+                selectionRect.style.display = 'block';
+            }
+        }
+
+        // 鼠标移动事件处理
+        function handleMouseMove(event) {
+            if (isDragging && isCtrlPressed && selectionRect) {
+                const chartContainer = document.getElementById('chart');
+                const rect = chartContainer.getBoundingClientRect();
+
+                // 获取相对于图表容器的坐标
+                const currentX = event.clientX - rect.left;
+
+                // 计算宽度和位置
+                const width = Math.abs(currentX - startX);
+                const left = Math.min(startX, currentX);
+
+                // 更新选择矩形
+                selectionRect.style.left = left + 'px';
+                selectionRect.style.width = width + 'px';
+            }
+        }
+
+        function getDataIndex(xCoord) {
+            if (!currentChart) return -1;
+
+            // 获取第一个系列的数据
+            const option = currentChart.getOption();
+            if (!option || !option.series || option.series.length === 0) return -1;
+
+            const seriesData = option.series[0].data;
+            if (!seriesData || seriesData.length === 0) return -1;
+
+            // 查找最接近的x坐标的数据点索引
+            let minDistance = Math.abs(seriesData[0][0] - xCoord);
+            let closestIndex = 0;
+
+            for (let i = 1; i < seriesData.length; i++) {
+                const distance = Math.abs(seriesData[i][0] - xCoord);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestIndex = i;
+                }
+            }
+
+            return closestIndex;
+        }
+
+        // 鼠标释放事件处理
+        function handleMouseUp(event) {
+            if (isDragging && isCtrlPressed && selectionRect) {
+                isDragging = false;
+
+                const chartContainer = document.getElementById('chart');
+                const rect = chartContainer.getBoundingClientRect();
+
+                // 获取相对于图表容器的坐标
+                endX = event.clientX - rect.left;
+
+                // 确保startX是较小值，endX是较大值
+                const minX = Math.min(startX, endX);
+                const maxX = Math.max(startX, endX);
+
+                // 隐藏选择矩形
+                selectionRect.style.display = 'none';
+
+                 // 转换像素坐标为数据坐标
+                const chartCoordStart = currentChart.convertFromPixel({seriesIndex: 0}, [minX, 0]);
+                const chartCoordEnd = currentChart.convertFromPixel({seriesIndex: 0}, [maxX, 0]);
+
+                // 获取数据点索引
+                startIndex = getDataIndex(chartCoordStart[0]);
+                endIndex = getDataIndex(chartCoordEnd[0]);
+
+
+                document.getElementById('serialModal').style.display = 'flex';
+            }
+
+            isDragging = false;
+        }
+
+        function checkSerial(){
+            if(startIndex === -1 || endIndex === -1){
+                alert('请选择有效的数据范围！');
+                return;
+            }
+            const type = document.getElementById('serialType').value;
+            // 这里可以调用其他函数处理选择区域
+            handleSelectionComplete(startIndex, endIndex, type);
+            closeSerial();
+        }
+
+        function closeSerial(){
+            document.getElementById('serialModal').style.display = 'none';
+        }
+
+
+        // 处理选择完成的回调函数
+        let displayList = {};
+        function handleSelectionComplete(startX, endX,  type) {
+            console.log('选择完成，起始X坐标:', startX, '结束X坐标:', endX);
+            document.getElementById('status').innerText = `已选择区域: ${startX.toFixed(2)} 到 ${endX.toFixed(2)} (${type})`;
+            pywebview.api.cropSignal(startX, endX, type).then((result) => {
+                if(result.success){
+                    displayList[result.title] = result.data;
+                }
+                else{
+                    alert('裁剪失败！');
+                }
+                console.log(result.message);
+            });
+        }
+
+
+        // 声明全局变量保存图表实例
+        let currentChart = null;
+
+        // 页面加载后初始化 ECharts 实例
+        document.addEventListener('DOMContentLoaded', function () {
+            const chartDom = document.getElementById('chart');
+            if (chartDom) {
+                currentChart = echarts.init(chartDom);
+                displayChart([], "无数据导入");
+            }
+        });
+
+        function displayChart(data, title) {
+            try {
+                console.log('开始渲染图表:', data, title);
+                if (data && title) {
+                    displayList[title] = data;
+                }
+
+                const chartDom = document.getElementById('chart');
+                if (!chartDom) {
+                    console.error('找不到 chart 元素');
+                    return;
+                }
+
+                // 检查 echarts 是否可用
+                if (typeof echarts === 'undefined') {
+                    console.error('ECharts 库未加载');
+                    chartDom.innerHTML = '<div style="color:red;text-align:center;padding:20px;">图表库加载失败</div>';
+                    return;
+                }
+
+                // 如果还没有初始化图表实例，则进行初始化
+                if (!currentChart) {
+                    currentChart = echarts.init(chartDom);
+                }
+
+                // 处理多条曲线数据
+                const series = [];
+                const legendData = [];
+
+                // 定义最大显示点数
+                const MAX_POINTS = 5000000;
+
+                for (const key in data) {
+                    if (data[key]){
+                        let sampledData = data[key]["y"];
+                        let sampledX = data[key]["x"];
+
+                        // 如果数据量超过最大点数，则进行采样
+                        if (sampledData.length > MAX_POINTS) {
+                            const step = Math.ceil(sampledData.length / MAX_POINTS);
+                            sampledData = sampledData.filter((_, index) => index % step === 0);
+                            sampledX = sampledX.filter((_, index) => index % step === 0);
+                        }
+
+                        series.push({
+                            name: key,
+                            type: 'line',
+                            smooth: true,
+                            sampling: 'lttb', // ECharts 提供的采样算法
+                            showSymbol: false,
+                            data: sampledX.map((x, index) => [x, sampledData[index]])
+                        });
+                        legendData.push(key);
+                    }
+                }
+
+
+                const option = {
+                    title: {
+                        text: title,
+                        left: 'center'
+                    },
+                    tooltip: {
+                        trigger: 'axis'
+                    },
+                    legend: {
+                        data: legendData,
+                        top: '10%'
+                    },
+                    xAxis: {
+                        type: 'value'
+                    },
+                    yAxis: {
+                        type: 'value'
+                    },
+                    series: series,
+                    dataZoom: [  // 添加数据缩放功能
+                        {
+                            type: 'inside',
+                            start: 0,
+                            end: 100
+                        },
+                        {
+                            start: 0,
+                            end: 100
+                        }
+                    ]
+                };
+
+                currentChart.setOption(option, true); // 使用 notMerge 模式更新配置
+
+                // 添加鼠标事件监听器实现矩形选择功能
+                addSelectionRectangleListener(chartDom);
+
+                // 确保图表正确渲染大小
+                setTimeout(() => {
+                    if (currentChart) {
+                        currentChart.resize();
+                    }
+                }, 100);
+
+                console.log('图表渲染成功');
+            } catch (error) {
+                console.error('图表渲染失败:', error);
+                // 在页面上显示错误信息
+                const chartDom = document.getElementById('chart');
+                if (chartDom) {
+                    chartDom.innerHTML = `<div style="color:red;text-align:center;padding:20px;">渲染失败: ${error.message}</div>`;
+                }
+            }
+        }
+
+
+        // 打开样品对话框
+        function openNewSampleDialog() {
+            pywebview.api.getCacheData().then(function(result) {
+                if(result['success']) {
+                    const sampleData = result['data']['sample'];
+                    if (sampleData) {
+                        // 正确设置表单字段的值
+                        document.getElementById('sampleNumber').value = sampleData['number'] || '';
+                        document.getElementById('sampleName').value = sampleData['name'] || '';
+                        document.getElementById('sampleMaterial').value = sampleData['material'] || '';
+                        document.getElementById('sampleArea').value = sampleData['area'] || '';
+                        document.getElementById('sampleLength').value = sampleData['length'] || '';
+                    }
+                } else {
+                    document.getElementById('status').innerText = '历史数据不存在';
+                }
+                document.getElementById('sampleModal').style.display = 'flex';
+            })
+            .catch(function(error) {
+                console.error("加载数据失败:", error);
+                document.getElementById('status').innerText = '数据加载失败';
+                document.getElementById('sampleModal').style.display = 'flex';
+            });
+        }
+
+        // 关闭样品对话框
+        function closeSampleWindow() {
+            document.getElementById('sampleModal').style.display = 'none';
+        }
+
+        //保存样品
+        function saveSample() {
+            // 获取表单数据
+            const sampleData = {
+                number: document.getElementById('sampleNumber').value,
+                name: document.getElementById('sampleName').value,
+                material: document.getElementById('sampleMaterial').value,
+                area: document.getElementById('sampleArea').value,
+                length: document.getElementById('sampleLength').value
+            };
+
+            // 数据验证
+            if (!sampleData.name || !sampleData.material || !sampleData.area || !sampleData.length) {
+                alert('请填写所有必填字段');
+                return;
+            }
+
+            if (window.pywebview) {
+                pywebview.api.saveSampleData(sampleData)
+                    .then(function(result) {
+                        console.log('样品数据保存成功:', result);
+                        document.getElementById('sampleDisplay').innerText =
+                            `编号: ${sampleData.number}
+                             样品: ${sampleData.name}
+                             材质：${sampleData.material}
+                             直径：${sampleData.area}
+                             长度：${sampleData.length}\n`;
+                    })
+                    .catch(function(error) {
+                        console.error('保存样品数据失败:', error);
+                    });
+            }
+
+            closeSampleWindow();
+        }
+
+
+        //打开新建杆对话框
+        function openNewHopkinsonDialog() {
+            pywebview.api.getCacheData().then(function(result) {
+                if(result['success']) {
+                    const hopkinsonData = result['data']['hopkinson'];
+                    if (hopkinsonData) {
+                        // 正确设置表单字段的值
+                        document.getElementById('hopkinsonType').value = hopkinsonData['type'] || '';
+                        document.getElementById('rodMode').value = hopkinsonData['mode'] || '';
+                        document.getElementById('rodMaterial').value = hopkinsonData['material'] || '';
+                        document.getElementById('rodDiameter').value = hopkinsonData['diameter'] || '';
+                        document.getElementById('youngsModulus').value = hopkinsonData['youngs'] || '';
+                        document.getElementById('soundVelocity').value = hopkinsonData['soundVelocity'] || '';
+                        document.getElementById('bridgeType').value = hopkinsonData['bridgeType'] || '';
+                        document.getElementById('gageFactor').value = hopkinsonData['gageFactor'] || '';
+                        document.getElementById('excitationVoltage').value = hopkinsonData['excitationVoltage'] || '';
+                        document.getElementById('calibrationFactor').value = hopkinsonData['calibrationFactor'] || '';
+                        document.getElementById('poissonRatio').value = hopkinsonData['poissonRatio'] || '';
+                        document.getElementById('dampingCoefficient').value = hopkinsonData['dampingCoefficient'] || '';
+                    }
+                } else {
+                    document.getElementById('status').innerText = '历史数据不存在';
+                }
+            })
+            .catch(function(error) {
+                console.error("加载数据失败:", error);
+                document.getElementById('status').innerText = '数据加载失败';
+            });
+            document.getElementById('hopkinsonModal').style.display = 'flex';
+
+        }
+
+        // 关闭新建杆对话框
+        function closeHopkinsonWindow() {
+            document.getElementById('hopkinsonModal').style.display = 'none';
+        }
+
+        //保存杆数据
+        function saveHopkinson() {
+            // 获取表单数据
+            const HopkinsonData = {
+                type: document.getElementById('hopkinsonType').value,
+                mode: document.getElementById('rodMode').value,
+                material: document.getElementById('rodMaterial').value,
+                diameter: document.getElementById('rodDiameter').value,
+                youngs: document.getElementById('youngsModulus').value,
+                soundVelocity: document.getElementById('soundVelocity').value,
+                bridgeType: document.getElementById('bridgeType').value,
+                gageFactor: document.getElementById('gageFactor').value,
+                excitationVoltage: document.getElementById('excitationVoltage').value,
+                calibrationFactor: document.getElementById('calibrationFactor').value,
+                poissonRatio: document.getElementById('poissonRatio').value,
+                dampingCoefficient: document.getElementById('dampingCoefficient').value
+            };
+
+            if (window.pywebview) {
+                pywebview.api.saveHopkinsonData(HopkinsonData)
+                    .then(function(result) {
+                        console.log('杆数据保存成功:', result);
+                        document.getElementById('rodParameters').innerText =
+                            `杆: ${HopkinsonData.type} (${HopkinsonData.mode})
+                            材质：${HopkinsonData.material}
+                            直径：${HopkinsonData.diameter}
+                            杨氏模量：${HopkinsonData.youngs}
+                            波速：${HopkinsonData.soundVelocity}
+                            桥类型：${HopkinsonData.bridgeType}
+                            灵敏系数：${HopkinsonData.gageFactor}
+                            激励电压：${HopkinsonData.excitationVoltage}
+                            标定系数：${HopkinsonData.calibrationFactor}
+                            泊松比：${HopkinsonData.poissonRatio}
+                            阻尼系数：${HopkinsonData.dampingCoefficient}\n`;
+                    })
+                    .catch(function(error) {
+                        console.error('保存杆数据失败:', error);
+                    })
+            }
+            closeHopkinsonWindow();
+        }
+
+
+        // 更新频率滑块值
+        function updateLowFreq(value) {
+            document.getElementById('lowFreqValue').innerText = `${value} Hz`;
+        }
+
+        function updateHighFreq(value) {
+            document.getElementById('highFreqValue').innerText = `${value} Hz`;
+        }
+
+        //时域对齐
+        function alignWithTime(){
+            pywebview.api.alignWithTime()
+                .then(function(result) {
+                    if(result['success']){
+                        displayChart(result['data'], result['title'])
+                        switchChartTab("crop");
+                        document.getElementById('status').innerText = '已时域对齐';
+                    }else{
+                        document.getElementById('status').innerText = '时域对齐失败';
+                    }
+                })
+                .catch(function(error) {
+                    console.error('时域对齐失败', error);
+                });
+        }
+
+        // 手动时域对齐
+        let alignManuallyShow = false
+        function alignManually() {
+            if(alignManuallyShow){
+                document.getElementById('alignManually').style.display = 'none';
+                alignManuallyShow = false;
+            }else
+            {
+                document.getElementById('alignManually').style.display = 'block';
+                switchChartTab("crop");
+                alignManuallyShow = true;
+            }
+        }
+
+        function updateInc(value) {
+            pywebview.api.alignManually(value, "inc", 2000)
+                .then(function(result) {
+                    if(result['success']){
+                        displayChart(result['data'], result['title'])
+                        switchChartTab("crop");
+                        document.getElementById('status').innerText = '已时域对齐';
+                    }else{
+                        document.getElementById('status').innerText = '时域对齐失败';
+                    }
+                })
+                .catch(function(error) {
+                    console.error('更新失败:', error);
+                });
+
+        }
+
+        function updateRef(value) {
+            pywebview.api.alignManually(value, "ref", 2000)
+                .then(function(result) {
+                   if(result['success']){
+                        displayChart(result['data'], result['title'])
+                        switchChartTab("crop");
+                        document.getElementById('status').innerText = '已时域对齐';
+                    }else{
+                        document.getElementById('status').innerText = '时域对齐失败';
+                    }
+                })
+                .catch(function(error) {
+                    console.error('更新失败:', error);
+                });
+        }
+
+        function updateTrans(value) {
+            pywebview.api.alignManually(value, "trans", 2000)
+                .then(function(result) {
+                    if(result['success']){
+                        displayChart(result['data'], result['title'])
+                        switchChartTab("crop");
+                        document.getElementById('status').innerText = '已时域对齐';
+                    }else{
+                        document.getElementById('status').innerText = '时域对齐失败';
+                    }
+                })
+                .catch(function(error) {
+                    console.error('更新失败:', error);
+                });
+        }
+
+        // 应用滤波
+        function applyFilter() {
+            const lowFreq = document.getElementById('lowFreqSlider').value;
+            const highFreq = document.getElementById('highFreqSlider').value;
+
+            if (window.pywebview) {
+                pywebview.api.applyFilter(lowFreq, highFreq)
+                    .then(function(result) {
+                        if(result['success']){
+                            displayChart(result['data'], result['title'])
+                            switchChartTab("wave");
+                            document.getElementById('status').innerText = `已应用 ${lowFreq}-${highFreq} Hz 滤波`;
+                        }else{
+                            document.getElementById('status').innerText = '滤波失败';
+                        }
+                    })
+                    .catch(function(error) {
+                        console.error('滤波失败', error);
+                        document.getElementById('status').innerText = '滤波失败';
+                    })
+            }
+
+        }
+
+        // 开始计算
+        function startCalculation() {
+            const calculationType = document.getElementById('calculateMethod').value;
+            pywebview.api.startCalculation(calculationType).then(function(result) {
+                if(result['success']){
+                    displayChart(result['data'], result['title'])
+                    switchChartTab("result");
+                    document.getElementById('status').innerText = '计算完成!' ;
+                }else{
+                    document.getElementById('status').innerText = '计算失败!';
+                }
+            });
+        }
+
+        // 导出结果
+        function exportResults() {
+            alert('结果已导出');
+        }
+
+        // 选项卡切换功能
+        function switchChartTab(tabName) {
+            // 更新选项卡按钮样式
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            tabButtons.forEach(btn => {
+                btn.style.background = '#e0e0e0';
+                btn.style.color = 'black';
+                btn.classList.remove('active');
+            });
+
+            document.getElementById(tabName).style.background = '#4CAF50';
+            document.getElementById(tabName).style.color = 'white';
+            document.getElementById(tabName).classList.add('active');
+
+            // 根据选项卡显示不同内容
+            switch(tabName) {
+                case 'wave':
+                    displayChart(displayList["原始数据"], "原始数据");
+                    document.getElementById('status').innerText = '已显示原始数据';
+                    break;
+                case 'fft':
+                    displayChart(displayList["频谱数据"], "频谱数据");
+                    break;
+                case 'crop':
+                    displayChart(displayList["时域对齐"], "时域对齐");
+                    break;
+                case 'result':
+                    displayChart(displayList["工程应力应变"], "工程应力应变");
+                    break;
+            }
+        }
+
+        // 窗口大小变化监听
+        window.addEventListener('resize', function() {
+            // 获取所有ECharts实例并调整大小
+            if (typeof echarts !== 'undefined' && echarts.getInstanceByDom) {
+                const chartDom = document.getElementById('chart');
+                if (chartDom) {
+                    const chartInstance = echarts.getInstanceByDom(chartDom);
+                    if (chartInstance) {
+                        chartInstance.resize();
+                    }
+                }
+            }
+        });
+
+
+        // 视图控制（简化版）
+        function zoomIn() { alert('放大功能待实现'); }
+        function zoomOut() { alert('缩小功能待实现'); }
+        function togglePan() { alert('拖动模式待实现'); }
+        function resetView() { renderChart(); }
+
+    </script>
+</body>
+</html>
