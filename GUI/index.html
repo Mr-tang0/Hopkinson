@@ -20,7 +20,8 @@
 
         /* 左侧控制面板 */
         .control-panel {
-            width: 18%;
+            width: 10%;
+            min-width: 200px;
             background: white;
             padding: 20px;
             box-shadow: 2px 0 10px rgba(0,0,0,0.1);
@@ -136,6 +137,15 @@
         .action-btn i {
             font-size: 16px;
             color: #333;
+        }
+
+        .calculate-panel{
+            width: 15%;
+            min-width: 220px;
+            background: white;
+            padding: 20px;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            overflow-y: auto;
         }
 
         /* 样品管理部分 */
@@ -337,6 +347,7 @@
                 <div id="transmittedFileName" class="selected-file">选择透射波文件</div>
             </div>
             <button class="primary" onclick="loadData()">加载数据</button>
+            <canvas width="266" height="50"></canvas>
         </div>
 
         <!-- 参数设置 -->
@@ -390,47 +401,86 @@
     </div>
 
     <!-- 右侧控制面板 -->
-    <div class="control-panel">
+    <div class="calculate-panel">
         <!-- 数据滤波 -->
         <div class="panel-section">
-            <h3>📊 数据计算</h3>
-            <div style="margin-top:10px;">
-                <label for="lowFreqSlider">低频截止 (Hz):</label>
-                <div style="display: flex; align-items: center; margin-top: 5px;">
-                    <input type="range" id="lowFreqSlider" min="0" max="1000000" value="0" oninput="updateLowFreq(this.value)" style="flex: 1;" />
+            <h3>📊 数据调整</h3>
+                <h4>滤波参数</h4>
+                <div style="margin-top:10px;">
+                    <label for="lowFreqSlider">低频截止:  </label>
                     <span id="lowFreqValue" style="margin-left: 10px;">0 Hz</span>
+                    <div style="display: flex; align-items: center; margin-top: 5px;">
+                        <input type="range" id="lowFreqSlider" min="0" max="1000000" value="0" oninput="updateLowFreq(this.value)" style="flex: 1;" />
+                    </div>
                 </div>
-            </div>
 
-            <div style="margin-top:10px;">
-                <label for="lowFreqSlider">高频截止 (Hz):</label>
-                <div style="display: flex; align-items: center; margin-top: 5px;">
-                    <input type="range" id="highFreqSlider" min="0" max="1000000" value="18000" oninput="updateHighFreq(this.value)" style="flex: 1;" />
-                    <span id="highFreqValue" style="margin-left: 10px;">18000 Hz</span>
+                <div style="margin-top:10px;">
+                    <label for="lowFreqSlider">高频截止:  </label>
+                    <span id="highFreqValue" style="margin-left: 10px;">180000 Hz</span>
+                    <div style="display: flex; align-items: center; margin-top: 5px;">
+                        <input type="range" id="highFreqSlider" min="0" max="1000000" value="180000" oninput="updateHighFreq(this.value)" style="flex: 1;" />
+                    </div>
                 </div>
-            </div>
+                <button onclick="applyFilter()">应用滤波</button>
 
-            <button onclick="applyFilter()">应用滤波</button>
-            <canvas id="space1" width="266" height="50"></canvas>
-            <button onclick="alignWithTime()">时域对齐</button>
-            <button onclick="alignManually()">手动调整</button>
+                <h4>基线调整</h4>
+                <button onclick="function baselineCorrection() {
+                    if (document.getElementById('baselineCorrection').style.display === 'block') {
+                        document.getElementById('baselineCorrection').style.display = 'none';
+                    }else{
+                        document.getElementById('baselineCorrection').style.display = 'block';
+                    }
+                }
+                baselineCorrection()">基线调整</button>
 
-            <div id = "alignManually" style="margin-top:10px; display:none;">
-                <label for="incManually">入射波调整</label>
-                <div style="display: flex; align-items: center; margin-top: 5px;">
-                    <input type="range" id="incManually" min="0" max="2000" value="1000" oninput="updateInc(this.value)" style="flex: 1;" />
+                <div id="baselineCorrection" style="margin-top:10px; display:none;">
+                    <label for="IncBaseline">入射波基线调整</label>
+                    <div style="display: flex; align-items: center; margin-top: 5px;">
+                        <input type="range" id="IncBaseline" min="0" max="1000" value="500" oninput="updateIncBaseline(this.value)" style="flex: 1;" />
+                        <input type="number" id="IncBaselineInput" min="-1" max="1" value="0" onchange="function updateIncBaselineInput(value) {
+                            document.getElementById('IncBaseline').value = value*500 + 500;
+                            document.getElementById('IncBaselineInput').value = value;
+                            updateIncBaseline(value*500 + 500);
+                        }
+                        updateIncBaselineInput(this.value)" style="width: 80px; margin-left: 10px; padding: 5px;" />
+                    </div>
+                    <label for="TransBaseline">透射波基线调整</label>
+                    <div style="display: flex; align-items: center; margin-top: 5px;">
+                        <input type="range" id="TransBaseline" min="0" max="1000" value="500" oninput="updateTransBaseline(this.value)" style="flex: 1;" />
+                        <input type="number" id="TransBaselineInput" min="-1" max="1" value="0" onchange="function updateTransBaselineInput(value) {
+                            document.getElementById('TransBaseline').value = value*500 + 500;
+                            document.getElementById('TransBaselineInput').value = value;
+                            updateTransBaseline(value*500 + 500);
+                        }
+                        updateTransBaselineInput(this.value)" style="width: 80px; margin-left: 10px; padding: 5px;" />
+                    </div>
                 </div>
-                <label for="refManually">反射波调整</label>
-                <div style="display: flex; align-items: center; margin-top: 5px;">
-                    <input type="range" id="refManually" min="0" max="2000" value="1000" oninput="updateRef(this.value)" style="flex: 1;" />
-                </div>
-                <label for="transManually">透射波调整</label>
-                <div style="display: flex; align-items: center; margin-top: 5px;">
-                    <input type="range" id="transManually" min="0" max="2000" value="1000" oninput="updateTrans(this.value)"style="flex: 1;" />
-                </div>
-            </div>
 
-            <canvas id="space2" width="266" height="50"></canvas>
+                <h4>时域对齐</h4>
+                <button onclick="alignWithTime()">时域对齐</button>
+                <button onclick="alignManually()">手动调整</button>
+
+                <div id="alignManually" style="margin-top:10px; display:none;">
+                    <label for="incManually">入射波调整偏移</label>
+                    <div style="display: flex; align-items: center; margin-top: 5px;">
+                        <input type="range" id="incManually" min="0" max="2000" value="1000" oninput="updateInc(this.value)" style="flex: 1;" />
+                        <input type="number" id="incManuallyInput" min="-1000" max="1000" value="0" onchange="updateIncFromInput(this.value)" style="width: 80px; margin-left: 10px; padding: 5px;" />
+
+                    </div>
+                    <label for="refManually">反射波调整偏移</label>
+                    <div style="display: flex; align-items: center; margin-top: 5px;">
+                        <input type="range" id="refManually" min="0" max="2000" value="1000" oninput="updateRef(this.value)" style="flex: 1;" />
+                        <input type="number" id="refManuallyInput" min="-1000" max="1000" value="0" onchange="updateRefFromInput(this.value)" style="width: 80px; margin-left: 10px; padding: 5px;" />
+                    </div>
+                    <label for="transManually">透射波调整偏移</label>
+                    <div style="display: flex; align-items: center; margin-top: 5px;">
+                        <input type="range" id="transManually" min="0" max="2000" value="1000" oninput="updateTrans(this.value)" style="flex: 1;" />
+                        <input type="number" id="transManuallyInput" min="-1000" max="1000" value="0" onchange="updateTransFromInput(this.value)" style="width: 80px; margin-left: 10px; padding: 5px;" />
+                    </div>
+                </div>
+
+
+            <canvas width="266" height="50"></canvas>
         </div>
 
         <!-- 数据保存 -->
@@ -534,8 +584,9 @@
                 <form id="hopkinsonForm">
                     <div class="sample-form-group">
                         <label for="hopkinsonType">杆型号</label>
-                        <select id="hopkinsonType" name="hopkinsonType" required>
-                            <option value="Hopkinson 1">Hopkinson 1</option>
+                        <select id="hopkinsonType" name="hopkinsonType" onchange="changeHopkinsonType()" required>
+<!--                            <option value="Hopkinson 1">Hopkinson 1</option>-->
+<!--                            <option value="Hopkinson 2">Hopkinson 2</option>-->
                         </select>
                     </div>
                     <div class="sample-form-group">
@@ -593,6 +644,17 @@
                         <label for="calibrationFactor">标定系数</label>
                         <input type="number" id="calibrationFactor" name="calibrationFactor" placeholder="请输入标定系数" step="0.0001" min="0" required>
                     </div>
+                    <div class="sample-form-row">
+                        <div class="sample-form-group">
+                            <label for="lengthA">第一中心距</label>
+                            <input type="number" id="lengthA" name="lengthA" placeholder="请输入第一中心距" step="0.01" min="0" max="0" required>
+                        </div>
+
+                        <div class="sample-form-group">
+                            <label for="lengthB">第二中心距</label>
+                            <input type="number" id="lengthB" name="lengthB" placeholder="请输入第二中心距" step="0.01" min="0" required>
+                        </div>
+                    </div>
 
                     <div class="sample-form-row">
                         <div class="sample-form-group">
@@ -616,12 +678,6 @@
     </div>
 
     <script src="echarts.js"></script>
-
-
-
-
-
-
 
 
 
@@ -700,7 +756,6 @@
         document.addEventListener('keydown', function(event) {
             if (event.ctrlKey || event.key === 'Control') {
                 isCtrlPressed = true;
-
                 enableChartDrag(false);
             }
         });
@@ -718,19 +773,23 @@
 
             if(flag){
                 // 恢复原始设置
-                if (window.originalDataZoom) {
-                    currentChart.setOption({
-                        dataZoom: window.originalDataZoom
+                 const option = currentChart.getOption();
+                 if (option && option.dataZoom){
+                     const newDataZoom = option.dataZoom.map(zoom => {
+                        return {
+                            ...zoom,
+                            disabled: false
+                        };
                     });
-                }
+
+                    currentChart.setOption({
+                        dataZoom: newDataZoom
+                    });
+                 }
             }else{
                 // 禁用内置缩放拖动
                 const option = currentChart.getOption();
                 if (option && option.dataZoom) {
-                    // 保存原始设置
-                    if (!window.originalDataZoom) {
-                        window.originalDataZoom = JSON.parse(JSON.stringify(option.dataZoom));
-                    }
 
                     // 禁用拖动功能
                     const newDataZoom = option.dataZoom.map(zoom => {
@@ -1092,10 +1151,16 @@
 
 
         //打开新建杆对话框
+        // 所有杆型号
+        let hopkinsonList ={}
         function openNewHopkinsonDialog() {
             pywebview.api.getCacheData().then(function(result) {
                 if(result['success']) {
                     const hopkinsonData = result['data']['hopkinson'];
+                    hopkinsonList = result['data']['hopkinsonList'];
+                    for (let key in hopkinsonList) {
+                         document.getElementById('hopkinsonType').innerHTML += '<option value="' + key + '">' + key + '</option>';
+                    }
                     if (hopkinsonData) {
                         // 正确设置表单字段的值
                         document.getElementById('hopkinsonType').value = hopkinsonData['type'] || '';
@@ -1108,6 +1173,8 @@
                         document.getElementById('gageFactor').value = hopkinsonData['gageFactor'] || '';
                         document.getElementById('excitationVoltage').value = hopkinsonData['excitationVoltage'] || '';
                         document.getElementById('calibrationFactor').value = hopkinsonData['calibrationFactor'] || '';
+                        document.getElementById('lengthA').value = hopkinsonData['lengthA'] || '';
+                        document.getElementById('lengthB').value = hopkinsonData['lengthB'] || '';
                         document.getElementById('poissonRatio').value = hopkinsonData['poissonRatio'] || '';
                         document.getElementById('dampingCoefficient').value = hopkinsonData['dampingCoefficient'] || '';
                     }
@@ -1122,6 +1189,26 @@
             document.getElementById('hopkinsonModal').style.display = 'flex';
 
         }
+
+        function changeHopkinsonType(){
+            const type = document.getElementById('hopkinsonType').value;
+            if(hopkinsonList[type]){
+                document.getElementById('rodMode').value = hopkinsonList[type]['mode']|| '';
+                document.getElementById('rodMaterial').value = hopkinsonList[type]['material']|| '';
+                document.getElementById('rodDiameter').value = hopkinsonList[type]['diameter']|| '';
+                document.getElementById('youngsModulus').value = hopkinsonList[type]['youngs']|| '';
+                document.getElementById('soundVelocity').value = hopkinsonList[type]['soundVelocity']|| '';
+                document.getElementById('bridgeType').value = hopkinsonList[type]['bridgeType']|| '';
+                document.getElementById('gageFactor').value = hopkinsonList[type]['gageFactor']|| '';
+                document.getElementById('excitationVoltage').value = hopkinsonList[type]['excitationVoltage']|| '';
+                document.getElementById('calibrationFactor').value = hopkinsonList[type]['calibrationFactor']|| '';
+                document.getElementById('poissonRatio').value = hopkinsonList[type]['poissonRatio']|| '';
+                document.getElementById('dampingCoefficient').value = hopkinsonList[type]['dampingCoefficient']|| '';
+                document.getElementById('status').innerText = '数据加载成功';
+            }
+
+        }
+
 
         // 关闭新建杆对话框
         function closeHopkinsonWindow() {
@@ -1143,7 +1230,9 @@
                 excitationVoltage: document.getElementById('excitationVoltage').value,
                 calibrationFactor: document.getElementById('calibrationFactor').value,
                 poissonRatio: document.getElementById('poissonRatio').value,
-                dampingCoefficient: document.getElementById('dampingCoefficient').value
+                dampingCoefficient: document.getElementById('dampingCoefficient').value,
+                lengthB: document.getElementById('lengthB').value,
+                lengthA: document.getElementById('lengthA').value,
             };
 
             if (window.pywebview) {
@@ -1160,6 +1249,8 @@
                             灵敏系数：${HopkinsonData.gageFactor}
                             激励电压：${HopkinsonData.excitationVoltage}
                             标定系数：${HopkinsonData.calibrationFactor}
+                            第一中心距：${HopkinsonData.lengthA}
+                            第二中心距：${HopkinsonData.lengthB}
                             泊松比：${HopkinsonData.poissonRatio}
                             阻尼系数：${HopkinsonData.dampingCoefficient}\n`;
                     })
@@ -1180,8 +1271,70 @@
             document.getElementById('highFreqValue').innerText = `${value} Hz`;
         }
 
+        function updateIncBaseline(value) {
+            document.getElementById('IncBaselineInput').value = (value - 500)/500;
+            pywebview.api.baselineCorrection((value - 500)/500, 'inc').then(function(result){
+                if (result) {
+                    // 保存缩放设置
+                    if (!window.originalDataZoom) {
+                        window.originalDataZoom = JSON.parse(JSON.stringify(currentChart.getOption().dataZoom));
+                    }
+                    window.originalDataZoom = JSON.parse(JSON.stringify(currentChart.getOption().dataZoom));
+
+                    displayChart(result['data'], result['title'])
+                    switchChartTab('wave');
+
+                    // 保持画面缩放
+                    currentChart.setOption({
+                        dataZoom: window.originalDataZoom
+                    });
+                    document.getElementById('status').innerHTML = '基线调整完成';
+                } else {
+                    document.getElementById('status').innerHTML = '基线调整失败';
+                }
+            })
+
+        }
+
+        function updateTransBaseline(value) {
+            document.getElementById('TransBaselineInput').value = (value - 500)/500;
+            pywebview.api.baselineCorrection((value - 500)/500, 'trans').then(function(result){
+                if (result) {
+                    // 保存缩放设置
+                    if (!window.originalDataZoom) {
+                        window.originalDataZoom = JSON.parse(JSON.stringify(currentChart.getOption().dataZoom));
+                    }
+                    window.originalDataZoom = JSON.parse(JSON.stringify(currentChart.getOption().dataZoom));
+
+                    displayChart(result['data'], result['title'])
+                    switchChartTab('wave');
+
+                    // 保持画面缩放
+                    currentChart.setOption({
+                        dataZoom: window.originalDataZoom
+                    });
+                    document.getElementById('status').innerHTML = '基线调整完成';
+                } else {
+                    document.getElementById('status').innerHTML = '基线调整失败';
+                }
+            })
+        }
+
+
         //时域对齐
         function alignWithTime(){
+            let maxValue = document.getElementById('incManually').max;
+            document.getElementById('incManually').value = maxValue/2;
+            updateInc(maxValue/2)
+
+            maxValue = document.getElementById('transManually').max;
+            document.getElementById('transManually').value = maxValue/2;
+            updateTrans(maxValue/2);
+
+            maxValue = document.getElementById('refManually').max;
+            document.getElementById('refManually').value = maxValue/2;
+            updateRef(maxValue/2);
+
             pywebview.api.alignWithTime()
                 .then(function(result) {
                     if(result['success']){
@@ -1195,6 +1348,8 @@
                 .catch(function(error) {
                     console.error('时域对齐失败', error);
                 });
+
+
         }
 
         // 手动时域对齐
@@ -1211,8 +1366,41 @@
             }
         }
 
+
+        // 同步滑块和输入框的值
+        function syncSliderAndInput(sliderId, inputId, value) {
+            document.getElementById(sliderId).value = document.getElementById(sliderId).max/2 + value;
+            document.getElementById(inputId).value = value;
+        }
+
+        // 从输入框更新入射波
+        function updateIncFromInput(value) {
+            const maxValue = document.getElementById('incManually').max;
+            value = Math.max(0, Math.min(maxValue, parseInt(value) || 0));
+            syncSliderAndInput('incManually', 'incManuallyInput', value);
+            updateInc(maxValue/2 + value);
+        }
+
+        // 从输入框更新反射波
+        function updateRefFromInput(value) {
+            const maxValue = document.getElementById('refManually').max;
+            value = Math.max(0, Math.min(maxValue, parseInt(value) || 0));
+            syncSliderAndInput('refManually', 'refManuallyInput', value);
+            updateRef(maxValue/2 + value);
+        }
+
+        // 从输入框更新透射波
+        function updateTransFromInput(value) {
+            const maxValue = document.getElementById('transManually').max;
+            value = Math.max(0, Math.min(maxValue, parseInt(value) || 0));
+            syncSliderAndInput('transManually', 'transManuallyInput', value);
+            updateTrans(maxValue/2 + value);
+        }
+
         function updateInc(value) {
-            pywebview.api.alignManually(value, "inc", 2000)
+            const maxValue = document.getElementById('incManually').max;
+            document.getElementById('incManuallyInput').value = value - maxValue/2;
+            pywebview.api.alignManually(value, "inc", maxValue)
                 .then(function(result) {
                     if(result['success']){
                         displayChart(result['data'], result['title'])
@@ -1229,7 +1417,9 @@
         }
 
         function updateRef(value) {
-            pywebview.api.alignManually(value, "ref", 2000)
+            const maxValue = document.getElementById('refManually').max;
+            document.getElementById('refManuallyInput').value = value - maxValue/2;
+            pywebview.api.alignManually(value, "ref", maxValue)
                 .then(function(result) {
                    if(result['success']){
                         displayChart(result['data'], result['title'])
@@ -1245,7 +1435,9 @@
         }
 
         function updateTrans(value) {
-            pywebview.api.alignManually(value, "trans", 2000)
+            const maxValue = document.getElementById('transManually').max;
+            document.getElementById('transManuallyInput').value = value - maxValue/2;
+            pywebview.api.alignManually(value, "trans", maxValue)
                 .then(function(result) {
                     if(result['success']){
                         displayChart(result['data'], result['title'])
@@ -1265,6 +1457,12 @@
             const lowFreq = document.getElementById('lowFreqSlider').value;
             const highFreq = document.getElementById('highFreqSlider').value;
 
+            // 保存缩放设置
+            if (!window.originalDataZoom) {
+                window.originalDataZoom = JSON.parse(JSON.stringify(currentChart.getOption().dataZoom));
+            }
+            window.originalDataZoom = JSON.parse(JSON.stringify(currentChart.getOption().dataZoom));
+
             if (window.pywebview) {
                 pywebview.api.applyFilter(lowFreq, highFreq)
                     .then(function(result) {
@@ -1272,6 +1470,11 @@
                             displayChart(result['data'], result['title'])
                             switchChartTab("wave");
                             document.getElementById('status').innerText = `已应用 ${lowFreq}-${highFreq} Hz 滤波`;
+
+                            // 保持画面缩放
+                            currentChart.setOption({
+                                dataZoom: window.originalDataZoom
+                            });
                         }else{
                             document.getElementById('status').innerText = '滤波失败';
                         }
@@ -1300,7 +1503,18 @@
 
         // 导出结果
         function exportResults() {
-            alert('结果已导出');
+            pywebview.api.exportResults()
+                .then(function(result) {
+                    if(result['success']){
+                        document.getElementById('status').innerText = '结果已导出';
+                    }else{
+                        document.getElementById('status').innerText = '结果导出失败';
+                    }
+                    alert(result['message']);
+                })
+                .catch(function(error) {
+                    console.error('结果导出失败:', error);
+                });
         }
 
         // 选项卡切换功能
@@ -1333,6 +1547,7 @@
                     displayChart(displayList["工程应力应变"], "工程应力应变");
                     break;
             }
+
         }
 
         // 窗口大小变化监听

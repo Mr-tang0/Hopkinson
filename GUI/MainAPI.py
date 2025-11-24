@@ -1,25 +1,24 @@
 import io
 import json
+import os
+from datetime import datetime
 
 import numpy as np
 import pandas
+import webview
 
 from Core.signals import WAVE
 from Core.HopkinsonClass import Sample, Hopkinson
-import matplotlib
-
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
-# 设置中文字体支持
-plt.rcParams['font.sans-serif'] = ['SimHei', 'FangSong', 'Arial Unicode MS']
-plt.rcParams['axes.unicode_minus'] = False
 
 
 class Api:
     def __init__(self):
         # 原始数据
         self.result = None
+
+        self.WAVE_second_ori = WAVE()
+        self.WAVE_first_ori = WAVE()
+
         self.WAVE_second = WAVE()
         self.WAVE_first = WAVE()
 
@@ -64,27 +63,20 @@ class Api:
             return {"success": False, "error": str(e)}
 
     def loadData(self, incid_content: str, trans_content: str):
+        self.__init__()
         inc_df = pandas.read_csv(io.StringIO(incid_content))
         self.WAVE_first = WAVE(wave=np.array(inc_df))
+        self.WAVE_first_ori = self.WAVE_first
+
         tra_df = pandas.read_csv(io.StringIO(trans_content))
         self.WAVE_second = WAVE(wave=np.array(tra_df))
+        self.WAVE_second_ori = self.WAVE_second
 
         self.WAVE_first_fft = self.WAVE_first.fft()
         self.WAVE_second_fft = self.WAVE_second.fft()
 
         self.WAVE_first_filtered = self.WAVE_first
         self.WAVE_second_filtered = self.WAVE_second
-
-        chart_data = {
-            "入射信号": {
-                "x": list(self.WAVE_first.wave_x),
-                "y": list(self.WAVE_first.wave_y)
-            },
-            "透射信号": {
-                "x": list(self.WAVE_second.wave_x),
-                "y": list(self.WAVE_second.wave_y)
-            }
-        }
 
         fft_data = {
             "入射信号": {
@@ -97,8 +89,47 @@ class Api:
             }
         }
 
+        chart_data = {
+            "入射信号": {
+                "x": list(self.WAVE_first.wave_x),
+                "y": list(self.WAVE_first.wave_y)
+            },
+            "透射信号": {
+                "x": list(self.WAVE_second.wave_x),
+                "y": list(self.WAVE_second.wave_y)
+            }
+        }
+
         return {"success": True, "message": "数据加载完成", "data": [chart_data, fft_data],
                 "title": ["原始数据", "频谱数据"]}
+
+    # 基线校正
+    def baselineCorrection(self, baseline, wave):
+        try:
+            print("基线校正", baseline, wave)
+            if wave == "inc":
+                self.WAVE_first = WAVE(x=self.WAVE_first_ori.wave_x, y=self.WAVE_first_ori.wave_y + baseline)
+                self.WAVE_first_filtered = self.WAVE_first
+            elif wave == "trans":
+                self.WAVE_second = WAVE(x=self.WAVE_second_ori.wave_x, y=self.WAVE_second_ori.wave_y + baseline)
+                self.WAVE_second_filtered = self.WAVE_second
+            else:
+                return {"success": False, "error": "数据类型错误"}
+
+            data = {
+                "入射信号": {
+                    "x": list(self.WAVE_first_filtered.wave_x),
+                    "y": list(self.WAVE_first_filtered.wave_y)
+                },
+                "透射信号": {
+                    "x": list(self.WAVE_second_filtered.wave_x),
+                    "y": list(self.WAVE_second_filtered.wave_y)
+                }
+            }
+
+            return {"success": True, "message": "数据加载完成", "data": data, "title": "原始数据"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def getLocalSampleData(self):
         localSample = {
@@ -141,14 +172,15 @@ class Api:
                                                    dampingCoefficient=float(
                                                        hopkinson_data.get('dampingCoefficient', 0)))
 
+            self.hopkinson.setLengthToSample(float(hopkinson_data.get('lengthA', 0)),
+                                             float(hopkinson_data.get('lengthB', 0)))
+
             self.cache["hopkinson"] = hopkinson_data
             self.saveCacheData()
         except Exception as e:
             return {"success": False, "error": str(e)}
 
     def applyFilter(self, low_cutoff_freq, high_cutoff_freq):
-        print(low_cutoff_freq, high_cutoff_freq)
-
         self.WAVE_first_filtered = self.WAVE_first.lowpass_filter(cutoff_freq=float(high_cutoff_freq))
         self.WAVE_second_filtered = self.WAVE_second.lowpass_filter(cutoff_freq=float(high_cutoff_freq))
 
@@ -201,11 +233,75 @@ class Api:
         else:
             return {"success": False, "message": "截取失败"}
 
+    #  使用国标推荐方法，确定各个波的起点，要求此时只标定了入射波
+    #  参考文献https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=D484174464EFFF3C22B1B8CEABF87E20
+    def autoAlignWithGB(self):
+        # 确定基线：取入射波开始点前100个点的平均值
+        start = self.cropDataStartAndEnd["inc"].get("start", 0)
+
+        baseline = self.WAVE_first_filtered.wave_y[start - 200:start - 100].mean()
+
+        # 获取入射波幅值最大index
+        tempWave = abs(self.WAVE_Inc.wave_y - baseline)
+        max_value = tempWave.max()
+
+        # 获取第一次超过最大值十分之一点的index
+        threshold = max_value * 0.1
+        first_over_threshold_index = np.argmax(tempWave > threshold)
+        print("first_over_threshold_index", first_over_threshold_index)
+
+        # 获取此点左右各100个点，根据两点做直线获取与基线相交的点的index
+        left_index = max(0, first_over_threshold_index - 100)
+        right_index = min(len(self.WAVE_Inc.wave_y) - 1, first_over_threshold_index + 100)
+
+        # 获取左右两点的值
+        x1, y1 = left_index, self.WAVE_Inc.wave_y[left_index]
+        x2, y2 = right_index, self.WAVE_Inc.wave_y[right_index]
+
+        # 计算直线方程 y = ax + b
+        a = (y2 - y1) / (x2 - x1)
+        b = y1 - a * x1
+
+        # 计算与基线相交的点的index 此为入射波开始点
+        n1 = int((baseline - b) / a)
+
+        # 采样时间间隔ms
+        ti = float(np.mean(np.diff(self.WAVE_Inc.wave_x)) * 1000)
+
+        a1, a2 = self.hopkinson.first_length + self.sample.length_mm / 2, self.hopkinson.second_length + self.sample.length_mm / 2
+
+        cb = self.hopkinson.soundVelocity_MPerS
+
+        l0 = self.sample.length_mm
+        cs = cb
+
+        n2 = int(2 * a1 / (cb * ti)) + n1
+        n3 = int((a1 + a2) / (cb * ti) + l0 / (cs * ti)) + n1
+
+        # 自动截取入射波透射波、反射波（均向左偏移100个点）
+        length = self.WAVE_Inc.len()
+        self.cropSignal(cropStart=n1 + start - 100, cropEnd=n1 + start - 100 + length,
+                        SignalType="inc")
+
+        self.cropSignal(cropStart=n2 + start - 100, cropEnd=n2 + start - 100 + length,
+                        SignalType="ref")
+
+        self.cropSignal(cropStart=n3 + start - 100,
+                        cropEnd=n3 + start - 100 + length, SignalType="trans")
+
+        pass
+
     def alignWithTime(self):
+        if self.WAVE_Inc.wave_y is not None and (self.WAVE_Ref.wave_y is None or self.WAVE_Trans.wave_y is None):
+            self.autoAlignWithGB()
+
+        # 对三个波进行等长裁剪
         minLength = min(self.WAVE_Inc.len(), self.WAVE_Ref.len(), self.WAVE_Trans.len())
         self.WAVE_Inc = self.WAVE_Inc.crop(0, minLength)
         self.WAVE_Ref = self.WAVE_Ref.crop(0, minLength)
         self.WAVE_Trans = self.WAVE_Trans.crop(0, minLength)
+
+        # print("alignWithTime", self.WAVE_Inc.len(), self.WAVE_Ref.len(), self.WAVE_Trans.len())
 
         # 对入射波时域归零
         self.WAVE_Inc = self.WAVE_Inc.alignToZero()
@@ -221,6 +317,10 @@ class Api:
         self.cropDataStartAndEnd["ref"] = {
             "start": self.cropDataStartAndEnd["ref"]["start"],
             "end": self.cropDataStartAndEnd["ref"]["start"] + self.WAVE_Ref.len()
+        }
+        self.cropDataStartAndEnd["inc"] = {
+            "start": self.cropDataStartAndEnd["inc"]["start"],
+            "end": self.cropDataStartAndEnd["inc"]["start"] + self.WAVE_Inc.len()
         }
 
         self.cropData["入射波"] = {
@@ -239,10 +339,14 @@ class Api:
         return {"success": True, "message": "时域对齐完成", "data": self.cropData, "title": "时域对齐"}
 
     def alignManually(self, shift_str, waveName, maxRange):
+        if self.WAVE_Inc.wave_y is not None and (self.WAVE_Ref.wave_y is None or self.WAVE_Trans.wave_y is None):
+            return {"success": False, "message": "调整失败"}
+
         start = self.cropDataStartAndEnd.get(waveName).get('start')
         end = self.cropDataStartAndEnd.get(waveName).get('end')
 
-        shift = int(int(maxRange / 2) - int(shift_str))
+        shift = int(int(maxRange) / 2 - int(shift_str))
+        # print("alignManually", self.WAVE_Inc.len(), self.WAVE_Ref.len(), self.WAVE_Trans.len(), shift)
 
         if waveName == "inc":
             self.WAVE_Inc = self.WAVE_first_filtered.crop(start + shift, end + shift)
@@ -298,6 +402,64 @@ class Api:
             #     {
             #         "x": list(self.result.get("strain_rate_time").wave_x),
             #     },
-
         }
         return {"success": True, "message": "计算完成", "data": result_data, "title": "工程应力应变"}
+
+    def exportResults(self):
+        try:
+            folder_path = webview.windows[0].create_file_dialog(
+                dialog_type=webview.FOLDER_DIALOG,
+                directory=''
+            )
+            folder_path = folder_path[0] if folder_path else None
+
+            if folder_path is not None:
+                folder_path = os.path.join(folder_path, f"hopkinson_result_{datetime.now().strftime('%Y%m%d%H%M%S')}")
+                if not os.path.exists(folder_path):
+                    os.makedirs(folder_path)
+
+                detailJson = {
+                    "sample": {
+                        "number": self.sample.number,
+                        "name": self.sample.name,
+                        "material": self.sample.material,
+                        "diameter_mm": self.sample.diameter_mm,
+                        "length_mm": self.sample.length_mm
+                    },
+                    "hopkinson": {
+                        "mode": self.hopkinson.mode,
+                        "diameter_mm": self.hopkinson.diameter_mm,
+                        "YoungS_Pa": self.hopkinson.YoungS_Pa,
+                        "soundVelocity_MPerS": self.hopkinson.soundVelocity_MPerS,
+
+                        "bridgeType": self.hopkinson.bridgeType,
+                        "gageFactor": self.hopkinson.gageFactor,
+                        "bridgeTension_v": self.hopkinson.bridgeTension_v,
+                        "coefficient": self.hopkinson.coefficient,
+                        "halfCoefficient": self.hopkinson.halfCoefficient,
+
+                        "poissonRatio": self.hopkinson.poissonRatio,
+                        "dampingCoefficient": self.hopkinson.dampingCoefficient
+                    }
+                }
+                json_file_path = os.path.join(folder_path, "detail.json")
+                with open(json_file_path, 'w', encoding='utf-8') as json_file:
+                    json.dump(detailJson, json_file, ensure_ascii=False, indent=4)
+
+                result_data = pandas.DataFrame({
+                    'time': self.WAVE_Inc.wave_x,
+                    'wave_inc': self.WAVE_Inc.wave_y,
+                    'wave_trans': self.WAVE_Trans.wave_y,
+                    'wave_ref': self.WAVE_Ref.wave_y,
+                    'strain': self.result.get("strain_time").wave_y,
+                    'stress': self.result.get("stress_time").wave_y,
+                    'strain_rate': self.result.get("strain_rate_time").wave_y
+                })
+                result_data_path = os.path.join(folder_path, "result.csv")
+                result_data.to_csv(result_data_path, index=False)
+
+                return {'success': True, 'message': '结果已导出'}
+            else:
+                return {'success': False, 'message': '用户取消了操作'}
+        except Exception as e:
+            return {'success': False, 'message': f'打开对话框时出错: {str(e)}'}

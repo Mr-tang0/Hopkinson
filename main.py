@@ -1,16 +1,32 @@
+import os
+import sys
+
 import webview
 from GUI.MainAPI import Api
 
 if __name__ == '__main__':
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    print("exe_dir:", exe_dir)
+    html_path = os.path.join(exe_dir, "GUI", "index.html")
+    print("html_path:", html_path)
+
+    if "conda" in sys.prefix.lower() or "program" in html_path.lower():
+        html_path = "GUI/index.html"
+
+    if not os.path.exists(html_path):
+        raise FileNotFoundError(f"HTML file not found: {html_path}")
+
     api = Api()
     window = webview.create_window("SHPB Data Processor",
-                                   "GUI/index.html",
+                                   html_path,
                                    width=1200,
                                    height=800,
-                                   js_api=api)
+                                   js_api=api,
+                                   )
     webview.start()
 
+# 打包exe pyinstaller  --name="MyBar"  --onefile --windowed --add-data "GUI;GUI"
+# --hidden-import=webview.platforms.winforms --hidden-import=webview.platforms.edgechromium  --collect-all webview
+# --exclude-module matplotlib --exclude-module scipy main.py
 
-# 打包exe
-# pyinstaller -F -w -i GUI/icon.ico main.py
-
+# pyinstaller --onefile -w main.py

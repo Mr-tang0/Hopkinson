@@ -1,10 +1,6 @@
 from __future__ import annotations
 import numpy as np
 from scipy.signal import butter, filtfilt
-import matplotlib
-from matplotlib import pyplot as plt
-
-matplotlib.use('TkAgg')
 
 
 class WAVE:
@@ -24,6 +20,9 @@ class WAVE:
 
         self.name = name if name is not None else "WAVE"
 
+    def __str__(self):
+        return f"WAVE: {self.name}, len :{self.len()}"
+
     def len(self):
         try:
             if self.wave is not None:
@@ -33,21 +32,20 @@ class WAVE:
         except Exception as e:
             print("something get worry", e)
 
-    def shape(self):
         return self.wave.shape
 
-    def plot(self, waveList: list = None, title: str = None):
-        plt.figure(figsize=(10, 5))
-
-        plt.plot(self.wave_x, self.wave_y, label=self.name)
-        if waveList is not None:
-            for wave in waveList:
-                plt.plot(wave.wave_x, wave.wave_y, label=wave.name)
-
-        plt.title(title)
-        plt.legend()
-        plt.grid(True)
-        plt.show()
+    # def plot(self, waveList: list = None, title: str = None):
+    #     plt.figure(figsize=(10, 5))
+    #
+    #     plt.plot(self.wave_x, self.wave_y, label=self.name)
+    #     if waveList is not None:
+    #         for wave in waveList:
+    #             plt.plot(wave.wave_x, wave.wave_y, label=wave.name)
+    #
+    #     plt.title(title)
+    #     plt.legend()
+    #     plt.grid(True)
+    #     plt.show()
 
     def crop(self, start_index: int, end_index: int = None, length: int = None):
         try:

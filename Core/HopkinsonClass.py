@@ -1,10 +1,5 @@
 import numpy as np
-import matplotlib
-
-matplotlib.use('TkAgg')
-from matplotlib import pyplot as plt
-from scipy.integrate import cumtrapz
-
+from scipy.integrate import cumulative_trapezoid as cumtrapz
 from Core.signals import WAVE
 
 
@@ -27,6 +22,8 @@ class Hopkinson:
     def __init__(self):
         # 默认参数
         # 杆参数
+        self.second_length = 62
+        self.first_length = 62
         self.mode = "compression"  # 压缩或拉伸
         self.diameter_mm = 20.0  # 杆直径 mm
         self.YoungS_Pa = 210e9  # 杆Young's模量Pa
@@ -63,6 +60,10 @@ class Hopkinson:
         self.poissonRatio = poissonRatio
         self.dampingCoefficient = dampingCoefficient
 
+    def setLengthToSample(self, lengthA: float, lengthB: float):
+        self.first_length = lengthA
+        self.second_length = lengthB
+
     #  二波法计算 入射波+透射波
     def calculateWith(self, sample: Sample,
                       wave_inc: WAVE,
@@ -82,7 +83,7 @@ class Hopkinson:
         strain_ref = compression * wave_ref.wave_y * self.halfCoefficient
 
         # 采样时间间隔（假设均匀采样）
-        dt = np.mean(np.diff(wave_inc.wave_x))
+        dt = float(np.mean(np.diff(wave_inc.wave_x)))
 
         # 试样参数
         sample_length_M = sample.length_mm / 1000.0  # m
