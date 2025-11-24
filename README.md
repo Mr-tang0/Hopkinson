@@ -1,4 +1,5 @@
 # 霍普金森杆（Hopkinson Bar）数据处理软件
+[English](README_EN.md) | [中文](README.md)
 
 ## 1. 霍普金森杆简介
 
