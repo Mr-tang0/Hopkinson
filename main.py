@@ -1,8 +1,9 @@
 import os
 import sys
+from GUI.MainAPI import Api
 
 import webview
-from GUI.MainAPI import Api
+
 
 if __name__ == '__main__':
     exe_dir = os.path.dirname(os.path.abspath(sys.executable))
