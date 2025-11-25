@@ -85,7 +85,7 @@ pip install numpy scipy pandas pywebview
 ### 4.1 主要标准
 本软件参考以下国家标准进行开发：
 
-[GB/T 37271-2018](https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=D484174464EFFF3C22B1B8CEABF87E20)
+[GB/T 34108-2017](https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=D484174464EFFF3C22B1B8CEABF87E20)
  《 Hopkinson杆法测定金属材料动态压缩力学性能的试验方法》
 
 ## 5. 联系方式

@@ -457,6 +457,12 @@
                 </div>
 
                 <h4>时域对齐</h4>
+                <select id="alignMethod" name="alignMethod" required>
+                        <option value="wave">波峰对齐</option>
+                        <option value="time">时间轴对齐</option>
+<!--                        <option value="corr">互相关对齐</option>-->
+                        <option value="gb">国标推荐对齐</option>
+                </select>
                 <button onclick="alignWithTime()">时域对齐</button>
                 <button onclick="alignManually()">手动调整</button>
 
@@ -1323,6 +1329,7 @@
 
         //时域对齐
         function alignWithTime(){
+
             let maxValue = document.getElementById('incManually').max;
             document.getElementById('incManually').value = maxValue/2;
             updateInc(maxValue/2)
@@ -1335,7 +1342,9 @@
             document.getElementById('refManually').value = maxValue/2;
             updateRef(maxValue/2);
 
-            pywebview.api.alignWithTime()
+            const method = document.getElementById('alignMethod').value;
+
+            pywebview.api.alignWithMethod(method)
                 .then(function(result) {
                     if(result['success']){
                         displayChart(result['data'], result['title'])

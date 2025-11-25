@@ -84,7 +84,7 @@ Click the "Save" button, select the file save path, and the processing results w
 ### 4.1 Main Standards
 This software was developed with reference to the following national standards:
 
-[GB/T 37271-2018](https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=D484174464EFFF3C22B1B8CEABF87E20)
+[GB/T 34108-2017](https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=D484174464EFFF3C22B1B8CEABF87E20)
 "Hopkinson Bar Method for Determining Dynamic Compressive Mechanical Properties of Metallic Materials"
 
 ## 5. Contact Information

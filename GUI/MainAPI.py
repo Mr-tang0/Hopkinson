@@ -6,9 +6,62 @@ from datetime import datetime
 import numpy as np
 import pandas
 import webview
+from scipy.ndimage import gaussian_filter1d
 
 from Core.signals import WAVE
 from Core.HopkinsonClass import Sample, Hopkinson
+
+
+def find_peaks_with_smoothing(data, sigma=1.0, height=None):
+    # 对数据进行高斯平滑
+    smoothed_data = gaussian_filter1d(data, sigma=sigma)
+
+    # 判断信号整体趋势：正数多则找上顶点，负数多则找下顶点
+    signal_mean = np.mean(data)
+    find_positive_peaks = signal_mean >= 0
+
+    # 在原始数据上查找平滑后的峰值位置
+    peaks = []
+    for i in range(1, len(smoothed_data) - 1):
+        if find_positive_peaks:
+            # 检测局部最大值（上顶点）
+            if (smoothed_data[i] > smoothed_data[i - 1] and
+                    smoothed_data[i] > smoothed_data[i + 1]):
+                # 可选：设置高度阈值
+                if height is None or data[i] >= height:
+                    peaks.append(i)
+        else:
+            # 检测局部最小值（下顶点）
+            if (smoothed_data[i] < smoothed_data[i - 1] and
+                    smoothed_data[i] < smoothed_data[i + 1]):
+                # 可选：设置高度阈值（对于负值）
+                if height is None or data[i] <= (-height if height else 0):
+                    peaks.append(i)
+
+    peaks = np.array(peaks)
+    # 如果找到了峰值点，过滤掉小于最大幅值25%的点
+    if len(peaks) > 0:
+        peak_values = data[peaks]
+        max_value = np.max(np.abs(peak_values))
+        threshold = max_value * 0.25
+
+        # 只保留幅值大于阈值的峰值点
+        valid_peaks = peaks[np.abs(peak_values) >= threshold]
+        return valid_peaks
+
+    return peaks
+
+
+def normalize_array(data):
+    data_min = np.min(data)
+    data_max = np.max(data)
+
+    # 避免除零错误
+    if data_max - data_min == 0:
+        return np.zeros_like(data)
+
+    normalized_data = (data - data_min) / (data_max - data_min)
+    return normalized_data
 
 
 class Api:
@@ -289,19 +342,35 @@ class Api:
         self.cropSignal(cropStart=n3 + start - 100,
                         cropEnd=n3 + start - 100 + length, SignalType="trans")
 
+        # 记录区间
+        self.cropDataStartAndEnd["inc"] = {
+            "start": n1,
+            "end": n1 + length
+        }
+        self.cropDataStartAndEnd["ref"] = {
+            "start": n2,
+            "end": n2 + length
+        }
+        self.cropDataStartAndEnd["trans"] = {
+            "start": n3,
+            "end": n3 + length
+        }
+
+        # 对入射波时域归零
+        self.WAVE_Inc = self.WAVE_Inc.alignToZero()
+        # 对反射波进行时域对齐
+        self.WAVE_Ref = self.WAVE_Ref.alignWith(self.WAVE_Inc)
+        # 对透射波进行时域对齐
+        self.WAVE_Trans = self.WAVE_Trans.alignWith(self.WAVE_Inc)
+
         pass
 
-    def alignWithTime(self):
-        if self.WAVE_Inc.wave_y is not None and (self.WAVE_Ref.wave_y is None or self.WAVE_Trans.wave_y is None):
-            self.autoAlignWithGB()
-
+    def autoAlignWithTime(self):
         # 对三个波进行等长裁剪
         minLength = min(self.WAVE_Inc.len(), self.WAVE_Ref.len(), self.WAVE_Trans.len())
         self.WAVE_Inc = self.WAVE_Inc.crop(0, minLength)
         self.WAVE_Ref = self.WAVE_Ref.crop(0, minLength)
         self.WAVE_Trans = self.WAVE_Trans.crop(0, minLength)
-
-        # print("alignWithTime", self.WAVE_Inc.len(), self.WAVE_Ref.len(), self.WAVE_Trans.len())
 
         # 对入射波时域归零
         self.WAVE_Inc = self.WAVE_Inc.alignToZero()
@@ -322,6 +391,121 @@ class Api:
             "start": self.cropDataStartAndEnd["inc"]["start"],
             "end": self.cropDataStartAndEnd["inc"]["start"] + self.WAVE_Inc.len()
         }
+
+    #  根据第一个顶点对齐
+    def alignWithWave(self):
+        minLength = min(self.WAVE_Inc.len(), self.WAVE_Ref.len(), self.WAVE_Trans.len())
+        self.WAVE_Inc = self.WAVE_Inc.crop(0, minLength)  # 先裁剪入射波长度
+
+        # 获取入射波顶点
+        peak_inc = find_peaks_with_smoothing(self.WAVE_Inc.wave_y)
+        # 获取反射波顶点
+        peak_ref = find_peaks_with_smoothing(self.WAVE_Ref.wave_y)
+        # 获取透射波顶点
+        peak_trans = find_peaks_with_smoothing(self.WAVE_Trans.wave_y)
+
+        # 计算顶点偏差
+        shift_ref_to_inc = peak_inc[0] - peak_ref[0]
+        shift_trans_to_inc = peak_inc[0] - peak_trans[0]
+
+        # 根据偏差重新从滤波数据中裁剪数据
+        start_ref = self.cropDataStartAndEnd["ref"]["start"]
+        self.WAVE_Ref = self.WAVE_first_filtered.crop(start_ref - shift_ref_to_inc,
+                                                      start_ref + minLength - shift_ref_to_inc)
+        start_trans = self.cropDataStartAndEnd["trans"]["start"]
+        self.WAVE_Trans = self.WAVE_second_filtered.crop(start_trans - shift_trans_to_inc,
+                                                         start_trans + minLength - shift_trans_to_inc)
+
+        # 对入射波时域归零
+        self.WAVE_Inc = self.WAVE_Inc.alignToZero()
+        # 对反射波进行时域对齐
+        self.WAVE_Ref = self.WAVE_Ref.alignWith(self.WAVE_Inc)
+        # 对透射波进行时域对齐
+        self.WAVE_Trans = self.WAVE_Trans.alignWith(self.WAVE_Inc)
+
+        # 更新起终点
+        self.cropDataStartAndEnd["trans"] = {
+            "start": start_trans + shift_trans_to_inc,
+            "end": start_trans + minLength + shift_trans_to_inc
+        }
+        self.cropDataStartAndEnd["ref"] = {
+            "start": start_ref + shift_ref_to_inc,
+            "end": start_ref + minLength + shift_ref_to_inc
+        }
+        self.cropDataStartAndEnd["inc"] = {
+            "start": self.cropDataStartAndEnd["inc"]["start"],
+            "end": self.cropDataStartAndEnd["inc"]["start"] + self.WAVE_Inc.len()
+        }
+
+        pass
+
+    def alignWithCorr(self):
+        # 将数据全部正向翻转并标准化
+        reverse_Inc = WAVE(wave=self.WAVE_Inc.wave)
+        reverse_ref = WAVE(wave=self.WAVE_Ref.wave)
+        reverse_trans = WAVE(wave=self.WAVE_Trans.wave)
+
+        inc_mean = np.mean(self.WAVE_Inc.wave_y)
+        reverse_Inc.wave_y = normalize_array(reverse_Inc.wave_y) if inc_mean > 0 else normalize_array(-reverse_Inc.wave_y)
+
+        ref_mean = np.mean(self.WAVE_Ref.wave_y)
+        reverse_ref.wave_y = normalize_array(reverse_ref.wave_y) if ref_mean > 0 else normalize_array(-reverse_ref.wave_y)
+
+        trans_mean = np.mean(self.WAVE_Trans.wave_y)
+        reverse_trans.wave_y = normalize_array(reverse_trans.wave_y) if trans_mean > 0 else normalize_array(-reverse_trans.wave_y)
+
+        # 计算与reverse_Inc.wave_y的互相关偏差
+        # 计算反射波与入射波的互相关
+        correlation_ref = np.correlate(reverse_Inc.wave_y, reverse_ref.wave_y, mode='full')
+        lag_ref = np.argmax(correlation_ref) - (len(reverse_Inc.wave_y) - 1)
+        print("ref_lag:", lag_ref, "correlation_ref", correlation_ref)
+
+        # 计算透射波与入射波的互相关
+        correlation_trans = np.correlate(reverse_Inc.wave_y, reverse_trans.wave_y, mode='full')
+        lag_trans = np.argmax(correlation_trans) - (len(reverse_Inc.wave_y) - 1)
+
+        print("ref_lag:", lag_ref, "trans_lag:", lag_trans)
+
+        # # 根据偏差重新裁剪数据
+        # start_ref = self.cropDataStartAndEnd["ref"]["start"]
+        # self.WAVE_Ref = self.WAVE_first_filtered.crop(start_ref - lag_ref,
+        #                                               start_ref + len(reverse_Inc.wave_y) - lag_ref)
+        #
+        # start_trans = self.cropDataStartAndEnd["trans"]["start"]
+        # self.WAVE_Trans = self.WAVE_second_filtered.crop(start_trans - lag_trans,
+        #                                                  start_trans + len(reverse_Inc.wave_y) - lag_trans)
+        #
+        # # 对入射波时域归零
+        # self.WAVE_Inc = reverse_Inc.alignToZero()
+        # # 对反射波进行时域对齐
+        # self.WAVE_Ref = self.WAVE_Ref.alignWith(self.WAVE_Inc)
+        # # 对透射波进行时域对齐
+        # self.WAVE_Trans = self.WAVE_Trans.alignWith(self.WAVE_Inc)
+        #
+        # # 更新起终点
+        # self.cropDataStartAndEnd["ref"] = {
+        #     "start": start_ref - lag_ref,
+        #     "end": start_ref + len(reverse_Inc.wave_y) - lag_ref
+        # }
+        # self.cropDataStartAndEnd["trans"] = {
+        #     "start": start_trans - lag_trans,
+        #     "end": start_trans + len(reverse_Inc.wave_y) - lag_trans
+        # }
+
+        pass
+
+    def alignWithMethod(self, method):
+        if method == "time":
+            self.autoAlignWithTime()
+
+        if method == "gb":
+            self.autoAlignWithGB()
+
+        if method == "corr":
+            self.alignWithCorr()
+
+        if method == "wave":
+            self.alignWithWave()
 
         self.cropData["入射波"] = {
             "x": list(self.WAVE_Inc.wave_x),

@@ -26,8 +26,4 @@ if __name__ == '__main__':
                                    )
     webview.start()
 
-# 打包exe pyinstaller  --name="MyBar"  --onefile --windowed --add-data "GUI;GUI"
-# --hidden-import=webview.platforms.winforms --hidden-import=webview.platforms.edgechromium  --collect-all webview
-# --exclude-module matplotlib --exclude-module scipy main.py
-
-# pyinstaller --onefile -w main.py
+# python -m PyInstaller main.spec
