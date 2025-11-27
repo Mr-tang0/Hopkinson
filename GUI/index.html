@@ -109,11 +109,11 @@
         /* 悬浮操作按钮 */
         .floating-buttons {
             position: absolute;
-            bottom: 20px;
+            top: 50%;
+            transform: translateY(-50%);
             right: 20px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
         }
 
         .action-btn {
@@ -138,6 +138,7 @@
             font-size: 16px;
             color: #333;
         }
+
 
         .calculate-panel{
             width: 15%;
@@ -383,21 +384,35 @@
             </svg>
         </div>
 
-        <!-- 悬浮按钮 -->
-        <div class="floating-buttons">
-            <div class="action-btn" title="放大" onclick="zoomIn()">
-                <i>🔍+</i>
+<!--         悬浮按钮 -->
+        <div id="floating-draw-rect"  class="floating-buttons">
+            <div class="action-btn" title="绘制波形区域" onclick="lineXView()">
+                <i>↔</i>
             </div>
-            <div class="action-btn" title="缩小" onclick="zoomOut()">
-                <i>🔍−</i>
-            </div>
-            <div class="action-btn" title="拖动模式" onclick="togglePan()">
-                <i>✋</i>
-            </div>
-            <div class="action-btn" title="重置视图" onclick="resetView()">
+            <canvas width="0" height="10"></canvas>
+            <div class="action-btn" title="清除波形区域" onclick="clearView()">
                 <i>↺</i>
             </div>
         </div>
+
+        <div id="floating-show-data" class="floating-buttons">
+            <div class="action-btn" title="应力-应变" onclick="showData(title)">
+                <i>σ-ε</i>
+            </div>
+            <canvas width="0" height="10"></canvas>
+            <div class="action-btn" title="应力-时间" onclick="showData(title)">
+                <i>σ-t</i>
+            </div>
+            <canvas width="0" height="10"></canvas>
+            <div class="action-btn" title="应变-时间" onclick="showData(title)">
+                <i>ε-t</i>
+            </div>
+            <canvas width="0" height="10"></canvas>
+            <div class="action-btn" title="应变率-时间" onclick="showData(title)">
+                <i>&epsilon;&#x0307;-t</i>
+            </div>
+        </div>
+
     </div>
 
     <!-- 右侧控制面板 -->
@@ -405,24 +420,6 @@
         <!-- 数据滤波 -->
         <div class="panel-section">
             <h3>📊 数据调整</h3>
-                <h4>滤波参数</h4>
-                <div style="margin-top:10px;">
-                    <label for="lowFreqSlider">低频截止:  </label>
-                    <span id="lowFreqValue" style="margin-left: 10px;">0 Hz</span>
-                    <div style="display: flex; align-items: center; margin-top: 5px;">
-                        <input type="range" id="lowFreqSlider" min="0" max="1000000" value="0" oninput="updateLowFreq(this.value)" style="flex: 1;" />
-                    </div>
-                </div>
-
-                <div style="margin-top:10px;">
-                    <label for="lowFreqSlider">高频截止:  </label>
-                    <span id="highFreqValue" style="margin-left: 10px;">180000 Hz</span>
-                    <div style="display: flex; align-items: center; margin-top: 5px;">
-                        <input type="range" id="highFreqSlider" min="0" max="1000000" value="180000" oninput="updateHighFreq(this.value)" style="flex: 1;" />
-                    </div>
-                </div>
-                <button onclick="applyFilter()">应用滤波</button>
-
                 <h4>基线调整</h4>
                 <button onclick="function baselineCorrection() {
                     if (document.getElementById('baselineCorrection').style.display === 'block') {
@@ -455,6 +452,24 @@
                         updateTransBaselineInput(this.value)" style="width: 80px; margin-left: 10px; padding: 5px;" />
                     </div>
                 </div>
+
+                <h4>滤波参数</h4>
+                    <div style="margin-top:10px;">
+                        <label for="lowFreqSlider">低频截止:  </label>
+                        <span id="lowFreqValue" style="margin-left: 10px;">0 Hz</span>
+                        <div style="display: flex; align-items: center; margin-top: 5px;">
+                            <input type="range" id="lowFreqSlider" min="0" max="1000000" value="0" oninput="updateLowFreq(this.value)" style="flex: 1;" />
+                        </div>
+                    </div>
+
+                    <div style="margin-top:10px;">
+                        <label for="lowFreqSlider">高频截止:  </label>
+                        <span id="highFreqValue" style="margin-left: 10px;">180000 Hz</span>
+                        <div style="display: flex; align-items: center; margin-top: 5px;">
+                            <input type="range" id="highFreqSlider" min="0" max="1000000" value="180000" oninput="updateHighFreq(this.value)" style="flex: 1;" />
+                        </div>
+                    </div>
+                <button onclick="applyFilter()">应用滤波</button>
 
                 <h4>时域对齐</h4>
                 <select id="alignMethod" name="alignMethod" required>
@@ -688,6 +703,19 @@
 
 
     <script>
+        // 所有显示图表
+        let displayList = {};
+        // 当前显示图表容器
+        let currentChart = null;
+        // 所有杆型号
+        let hopkinsonList ={}
+        // 框选索引
+        let startIndex = -1;
+        let endIndex = -1;
+        // 是否按下Ctrl键
+        let isCtrlPressed = false;
+        let isDragging = false;
+
         // 文件选择事件处理
         document.getElementById('incidentFile').addEventListener('change', function() {
             const file = this.files[0];
@@ -699,6 +727,25 @@
             const file = this.files[0];
             document.getElementById('transmittedFileName').innerText = file ? file.name : '选择透射波文件';
             window.transmittedFile = file;
+        });
+
+        // 监听键盘事件
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey || event.key === 'Control') {
+                if(!isCtrlPressed){
+                    isCtrlPressed = true;
+                    lineXView();
+                }
+            }
+        });
+
+        document.addEventListener('keyup', function(event) {
+            if (event.key === 'Control') {
+                if(isCtrlPressed){
+                    isCtrlPressed = false;
+                    clearView();
+                }
+            }
         });
 
 
@@ -748,131 +795,6 @@
             document.getElementById('status').innerText = '正在加载数据...';
         }
 
-        // 添加全局变量来存储矩形选择相关数据
-        let isCtrlPressed = false;
-        let isDragging = false;
-        let startX = 0;
-        let endX = 0;
-        let selectionRect = null;
-
-        let startIndex = -1;
-        let endIndex = -1;
-
-        // 监听键盘事件
-        document.addEventListener('keydown', function(event) {
-            if (event.ctrlKey || event.key === 'Control') {
-                isCtrlPressed = true;
-                enableChartDrag(false);
-            }
-        });
-
-        document.addEventListener('keyup', function(event) {
-            if (event.key === 'Control') {
-                isCtrlPressed = false;
-                enableChartDrag(true);
-            }
-        });
-
-        // 启用图表拖动功能
-        function enableChartDrag(flag) {
-            if (!currentChart)return;
-
-            if(flag){
-                // 恢复原始设置
-                 const option = currentChart.getOption();
-                 if (option && option.dataZoom){
-                     const newDataZoom = option.dataZoom.map(zoom => {
-                        return {
-                            ...zoom,
-                            disabled: false
-                        };
-                    });
-
-                    currentChart.setOption({
-                        dataZoom: newDataZoom
-                    });
-                 }
-            }else{
-                // 禁用内置缩放拖动
-                const option = currentChart.getOption();
-                if (option && option.dataZoom) {
-
-                    // 禁用拖动功能
-                    const newDataZoom = option.dataZoom.map(zoom => {
-                        return {
-                            ...zoom,
-                            disabled: true
-                        };
-                    });
-
-                    currentChart.setOption({
-                        dataZoom: newDataZoom
-                    });
-                }
-            }
-        }
-
-        // 添加矩形选择监听器
-        function addSelectionRectangleListener(chartDom) {
-            // 移除之前可能添加的事件监听器
-            chartDom.removeEventListener('mousedown', handleMouseDown);
-            chartDom.removeEventListener('mousemove', handleMouseMove);
-            chartDom.removeEventListener('mouseup', handleMouseUp);
-
-            // 添加新的事件监听器
-            chartDom.addEventListener('mousedown', handleMouseDown);
-            chartDom.addEventListener('mousemove', handleMouseMove);
-            chartDom.addEventListener('mouseup', handleMouseUp);
-        }
-
-        // 鼠标按下事件处理
-        function handleMouseDown(event) {
-            if (isCtrlPressed && currentChart) {
-                isDragging = true;
-                const chartContainer = document.getElementById('chart');
-                const rect = chartContainer.getBoundingClientRect();
-
-                // 获取相对于图表容器的坐标
-                startX = event.clientX - rect.left;
-
-                // 创建或重置选择矩形
-                if (!selectionRect) {
-                    selectionRect = document.createElement('div');
-                    selectionRect.style.position = 'absolute';
-                    selectionRect.style.backgroundColor = 'rgba(0, 123, 255, 0.3)';
-                    selectionRect.style.border = '1px solid rgba(0, 123, 255, 0.8)';
-                    selectionRect.style.pointerEvents = 'none';
-                    chartContainer.appendChild(selectionRect);
-                }
-
-                // 设置初始位置和尺寸
-                selectionRect.style.left = startX + 'px';
-                selectionRect.style.top = '100px';
-                selectionRect.style.width = '0px';
-                selectionRect.style.height = chartContainer.clientHeight - 150 + 'px';
-                selectionRect.style.display = 'block';
-            }
-        }
-
-        // 鼠标移动事件处理
-        function handleMouseMove(event) {
-            if (isDragging && isCtrlPressed && selectionRect) {
-                const chartContainer = document.getElementById('chart');
-                const rect = chartContainer.getBoundingClientRect();
-
-                // 获取相对于图表容器的坐标
-                const currentX = event.clientX - rect.left;
-
-                // 计算宽度和位置
-                const width = Math.abs(currentX - startX);
-                const left = Math.min(startX, currentX);
-
-                // 更新选择矩形
-                selectionRect.style.left = left + 'px';
-                selectionRect.style.width = width + 'px';
-            }
-        }
-
         function getDataIndex(xCoord) {
             if (!currentChart) return -1;
 
@@ -898,38 +820,6 @@
             return closestIndex;
         }
 
-        // 鼠标释放事件处理
-        function handleMouseUp(event) {
-            if (isDragging && isCtrlPressed && selectionRect) {
-                isDragging = false;
-
-                const chartContainer = document.getElementById('chart');
-                const rect = chartContainer.getBoundingClientRect();
-
-                // 获取相对于图表容器的坐标
-                endX = event.clientX - rect.left;
-
-                // 确保startX是较小值，endX是较大值
-                const minX = Math.min(startX, endX);
-                const maxX = Math.max(startX, endX);
-
-                // 隐藏选择矩形
-                selectionRect.style.display = 'none';
-
-                 // 转换像素坐标为数据坐标
-                const chartCoordStart = currentChart.convertFromPixel({seriesIndex: 0}, [minX, 0]);
-                const chartCoordEnd = currentChart.convertFromPixel({seriesIndex: 0}, [maxX, 0]);
-
-                // 获取数据点索引
-                startIndex = getDataIndex(chartCoordStart[0]);
-                endIndex = getDataIndex(chartCoordEnd[0]);
-
-
-                document.getElementById('serialModal').style.display = 'flex';
-            }
-
-            isDragging = false;
-        }
 
         function checkSerial(){
             if(startIndex === -1 || endIndex === -1){
@@ -948,10 +838,10 @@
 
 
         // 处理选择完成的回调函数
-        let displayList = {};
         function handleSelectionComplete(startX, endX,  type) {
             console.log('选择完成，起始X坐标:', startX, '结束X坐标:', endX);
             document.getElementById('status').innerText = `已选择区域: ${startX.toFixed(2)} 到 ${endX.toFixed(2)} (${type})`;
+
             pywebview.api.cropSignal(startX, endX, type).then((result) => {
                 if(result.success){
                     displayList[result.title] = result.data;
@@ -963,10 +853,6 @@
             });
         }
 
-
-        // 声明全局变量保存图表实例
-        let currentChart = null;
-
         // 页面加载后初始化 ECharts 实例
         document.addEventListener('DOMContentLoaded', function () {
             const chartDom = document.getElementById('chart');
@@ -974,9 +860,36 @@
                 currentChart = echarts.init(chartDom);
                 displayChart([], "无数据导入");
             }
+
+            if (currentChart) {
+                currentChart.on('brushend', function (params) {
+                    // 获取数据点索引
+                    const minX = params.areas[0].range[0];
+                    const maxX = params.areas[0].range[1];
+
+                    const chartCoordStart = currentChart.convertFromPixel({seriesIndex: 0}, [minX, 0]);
+                    const chartCoordEnd = currentChart.convertFromPixel({seriesIndex: 0}, [maxX, 0]);
+
+                    startIndex = getDataIndex(chartCoordStart[0]);
+                    endIndex = getDataIndex(chartCoordEnd[0]);
+
+                    document.getElementById('serialModal').style.display = 'flex';
+
+                    currentChart.dispatchAction({
+                        type: 'brush',
+                        areas: []
+                    });
+                });
+
+            } else {
+                console.error("currentChart 未能成功初始化。");
+
+            }
+            document.getElementById('floating-show-data').style.display = 'none';
+
         });
 
-        function displayChart(data, title) {
+        function displayChart(data, title, labelX = 'X', labelY = 'Y', showYS = false) {
             try {
                 console.log('开始渲染图表:', data, title);
                 if (data && title) {
@@ -984,6 +897,7 @@
                 }
 
                 const chartDom = document.getElementById('chart');
+
                 if (!chartDom) {
                     console.error('找不到 chart 元素');
                     return;
@@ -1009,6 +923,9 @@
                 const MAX_POINTS = 5000000;
 
                 for (const key in data) {
+                    if(showYS && key!==title){
+                        continue;
+                    }
                     if (data[key]){
                         let sampledData = data[key]["y"];
                         let sampledX = data[key]["x"];
@@ -1019,56 +936,85 @@
                             sampledData = sampledData.filter((_, index) => index % step === 0);
                             sampledX = sampledX.filter((_, index) => index % step === 0);
                         }
-
                         series.push({
                             name: key,
                             type: 'line',
                             smooth: true,
                             sampling: 'lttb', // ECharts 提供的采样算法
                             showSymbol: false,
-                            data: sampledX.map((x, index) => [x, sampledData[index]])
+                            data: sampledData.map((y, index) => [sampledX[index], y]),
                         });
+
                         legendData.push(key);
                     }
                 }
 
-
                 const option = {
                     title: {
-                        text: title,
+                        text: title || '数据信号展示',
                         left: 'center'
                     },
                     tooltip: {
-                        trigger: 'axis'
+                        trigger: 'axis',
+                        axisPointer: {
+                            type: 'cross',
+                            label: {
+                                backgroundColor: '#6a7985'
+                            }
+                        }
+                    },
+                    brush: {
+                        throttleType: 'debounce',
+                        throttleDelay: 300,
+                        xAxisIndex: 0,
+                        brushStyle: {
+                            borderWidth: 1,                    // 边框宽度
+                            borderColor: 'rgba(255, 0, 0, 0.8)', // 边框颜色 (示例：鲜红色)
+                            color: 'rgba(255, 0, 0, 0.3)'       // 选区填充色 (示例：半透明红色)
+                        }
+                    },
+                    toolbox: {
+                        show: false,
+                        feature: {
+                            brush: {
+                                type: ['lineX', 'clear'],
+                                title: {
+                                    lineX: '横向选择',
+                                    clear: '清除选择'
+                                }
+                            }
+                        }
                     },
                     legend: {
                         data: legendData,
                         top: '10%'
                     },
-                    xAxis: {
-                        type: 'value'
+                    grid: {
+                        left: '50',
+                        right: '80',
+                        containLabel: true
                     },
+                    xAxis: {
+                        type: 'value',
+                        name: labelX
+                    },
+
                     yAxis: {
-                        type: 'value'
+                        type: 'value',
+                        name: labelY
                     },
                     series: series,
                     dataZoom: [  // 添加数据缩放功能
                         {
-                            type: 'inside',
-                            start: 0,
-                            end: 100
-                        },
-                        {
-                            start: 0,
-                            end: 100
+                          id: "dataZoomX",
+                          type: "slider",
+                          xAxisIndex: [0],
                         }
                     ]
                 };
 
                 currentChart.setOption(option, true); // 使用 notMerge 模式更新配置
 
-                // 添加鼠标事件监听器实现矩形选择功能
-                addSelectionRectangleListener(chartDom);
 
                 // 确保图表正确渲染大小
                 setTimeout(() => {
@@ -1157,8 +1103,6 @@
 
 
         //打开新建杆对话框
-        // 所有杆型号
-        let hopkinsonList ={}
         function openNewHopkinsonDialog() {
             pywebview.api.getCacheData().then(function(result) {
                 if(result['success']) {
@@ -1543,21 +1487,42 @@
             // 根据选项卡显示不同内容
             switch(tabName) {
                 case 'wave':
-                    displayChart(displayList["原始数据"], "原始数据");
+                    displayChart(displayList["原始数据"], "原始数据", '时间/s', '电压/V');
                     document.getElementById('status').innerText = '已显示原始数据';
+                    document.getElementById('floating-draw-rect').style.display = 'block';
+                    document.getElementById('floating-show-data').style.display = 'none';
                     break;
                 case 'fft':
-                    displayChart(displayList["频谱数据"], "频谱数据");
+                    displayChart(displayList["频谱数据"], "频谱数据", '频率/Hz', '振幅/V');
+                    document.getElementById('floating-draw-rect').style.display = 'none';
+                    document.getElementById('floating-show-data').style.display = 'none';
                     break;
                 case 'crop':
-                    displayChart(displayList["时域对齐"], "时域对齐");
+                    displayChart(displayList["时域对齐"], "时域对齐", '时间/s', '电压/V');
+                    document.getElementById('floating-draw-rect').style.display = 'none';
+                    document.getElementById('floating-show-data').style.display = 'none';
                     break;
                 case 'result':
-                    displayChart(displayList["工程应力应变"], "工程应力应变");
+                    displayChart(displayList["计算结果"], "应力-应变", '应变/1', '应力/MPa', true);
+                    document.getElementById('floating-draw-rect').style.display = 'none';
+                    document.getElementById('floating-show-data').style.display = 'block';
+                    document.getElementById('floating-show-data').style.gap = '10px';
+
                     break;
             }
 
         }
+        function showData(title){
+            if(title==="应力-应变")
+                displayChart(displayList["计算结果"], title,'应变/1', '应力/MPa', true);
+            else if (title==="应力-时间")
+                displayChart(displayList["计算结果"], title, '时间/s', '应力/MPa', true);
+            else if (title==="应变-时间")
+                displayChart(displayList["计算结果"], title, '时间/s', '应变/1', true);
+            else if (title==="应变率-时间")
+                displayChart(displayList["计算结果"], title, '时间/s', '应变率/(1/s)', true);
+        }
+
 
         // 窗口大小变化监听
         window.addEventListener('resize', function() {
@@ -1573,12 +1538,36 @@
             }
         });
 
+        function  lineXView(){
+            currentChart.dispatchAction({
+                type: 'takeGlobalCursor',
+                key: 'brush', // 确保激活的是 brush 功能
+                brushOption: {
+                    // 可以根据需要重新设置 brushType，保持为 'rect' 或 'lineX'
+                    brushType: 'lineX'
+                }
+            });
 
-        // 视图控制（简化版）
-        function zoomIn() { alert('放大功能待实现'); }
-        function zoomOut() { alert('缩小功能待实现'); }
-        function togglePan() { alert('拖动模式待实现'); }
-        function resetView() { renderChart(); }
+        }
+
+        function  clearView(){
+            try {
+                if (currentChart){
+                    currentChart.dispatchAction({
+                        type: 'brush',
+                        areas: []
+                    });
+                    currentChart.dispatchAction({
+                        type: 'takeGlobalCursor',
+                        key: false
+                    });
+                }
+            } catch (error) {
+                console.error('清除视图失败:', error);
+                alert(error)
+            }
+        }
+
 
     </script>
 </body>

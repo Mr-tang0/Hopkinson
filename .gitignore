@@ -1,3 +1,5 @@
 /.idea
 /Core/__pycache__
 /GUI/__pycache__
+/dist
+/build

@@ -117,11 +117,17 @@ class Api:
 
     def loadData(self, incid_content: str, trans_content: str):
         self.__init__()
-        inc_df = pandas.read_csv(io.StringIO(incid_content))
+        inc_df = pandas.read_csv(io.StringIO(incid_content), skiprows=10)
+        # 交换入射波数据的两列
+        inc_df.iloc[:, [0, 1]] = inc_df.iloc[:, [1, 0]].values
+
         self.WAVE_first = WAVE(wave=np.array(inc_df))
         self.WAVE_first_ori = self.WAVE_first
 
-        tra_df = pandas.read_csv(io.StringIO(trans_content))
+        tra_df = pandas.read_csv(io.StringIO(trans_content), skiprows=10)
+        # 交换透射波数据的两列
+        tra_df.iloc[:, [0, 1]] = tra_df.iloc[:, [1, 0]].values
+
         self.WAVE_second = WAVE(wave=np.array(tra_df))
         self.WAVE_second_ori = self.WAVE_second
 
@@ -446,13 +452,16 @@ class Api:
         reverse_trans = WAVE(wave=self.WAVE_Trans.wave)
 
         inc_mean = np.mean(self.WAVE_Inc.wave_y)
-        reverse_Inc.wave_y = normalize_array(reverse_Inc.wave_y) if inc_mean > 0 else normalize_array(-reverse_Inc.wave_y)
+        reverse_Inc.wave_y = normalize_array(reverse_Inc.wave_y) if inc_mean > 0 else normalize_array(
+            -reverse_Inc.wave_y)
 
         ref_mean = np.mean(self.WAVE_Ref.wave_y)
-        reverse_ref.wave_y = normalize_array(reverse_ref.wave_y) if ref_mean > 0 else normalize_array(-reverse_ref.wave_y)
+        reverse_ref.wave_y = normalize_array(reverse_ref.wave_y) if ref_mean > 0 else normalize_array(
+            -reverse_ref.wave_y)
 
         trans_mean = np.mean(self.WAVE_Trans.wave_y)
-        reverse_trans.wave_y = normalize_array(reverse_trans.wave_y) if trans_mean > 0 else normalize_array(-reverse_trans.wave_y)
+        reverse_trans.wave_y = normalize_array(reverse_trans.wave_y) if trans_mean > 0 else normalize_array(
+            -reverse_trans.wave_y)
 
         # 计算与reverse_Inc.wave_y的互相关偏差
         # 计算反射波与入射波的互相关
@@ -572,22 +581,23 @@ class Api:
                     "x": list(self.result.get("stress_strain").wave_x),
                     "y": list(self.result.get("stress_strain").wave_y)
                 },
-            # "应变-时间":
-            #     {
-            #         "x": list(self.result.get("strain_time").wave_x),
-            #         "y": list(self.result.get("strain_time").wave_y)
-            #     },
-            # "应力-时间":
-            #     {
-            #         "x": list(self.result.get("stress_time").wave_x),
-            #         "y": list(self.result.get("stress_time").wave_y)
-            #     },
-            # "应变率-时间":
-            #     {
-            #         "x": list(self.result.get("strain_rate_time").wave_x),
-            #     },
+            "应变-时间":
+                {
+                    "x": list(self.result.get("strain_time").wave_x),
+                    "y": list(self.result.get("strain_time").wave_y)
+                },
+            "应力-时间":
+                {
+                    "x": list(self.result.get("stress_time").wave_x),
+                    "y": list(self.result.get("stress_time").wave_y)
+                },
+            "应变率-时间":
+                {
+                    "x": list(self.result.get("strain_rate_time").wave_x),
+                    "y": list(self.result.get("strain_rate_time").wave_y),
+                }
         }
-        return {"success": True, "message": "计算完成", "data": result_data, "title": "工程应力应变"}
+        return {"success": True, "message": "计算完成", "data": result_data, "title": "计算结果"}
 
     def exportResults(self):
         try:
