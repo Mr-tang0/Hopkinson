@@ -1,5 +1,6 @@
 import numpy as np
-from scipy.integrate import cumulative_trapezoid as cumtrapz
+# from scipy.integrate import cumulative_trapezoid as cumtrapz
+from .numpyTool import cumtrapz
 from Core.signals import WAVE
 
 
@@ -100,7 +101,8 @@ class Hopkinson:
             eng_strain = cumtrapz(eng_strain_rate, dx=dt, initial=0)  # 应变 1
 
         elif calculationType == "threeWave":
-            eng_stress_Mpa = 0.5 * self.YoungS_Pa * area_ratio * (strain_inc + strain_trans + strain_ref) / 1e6  # 应力 MPa
+            eng_stress_Mpa = 0.5 * self.YoungS_Pa * area_ratio * (
+                        strain_inc + strain_trans + strain_ref) / 1e6  # 应力 MPa
             eng_strain_rate = (self.soundVelocity_MPerS / sample_length_M) * (strain_inc - strain_ref - strain_trans)
             eng_strain = cumtrapz(eng_strain_rate, dx=dt, initial=0)
 

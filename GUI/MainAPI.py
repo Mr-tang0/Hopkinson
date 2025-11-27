@@ -6,7 +6,8 @@ from datetime import datetime
 import numpy as np
 import pandas
 import webview
-from scipy.ndimage import gaussian_filter1d
+# from scipy.ndimage import gaussian_filter1d
+from Core.numpyTool import gaussian_filter1d
 
 from Core.signals import WAVE
 from Core.HopkinsonClass import Sample, Hopkinson

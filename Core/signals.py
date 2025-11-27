@@ -1,6 +1,8 @@
 from __future__ import annotations
 import numpy as np
-from scipy.signal import butter, filtfilt
+# from scipy.signal import butter, filtfilt
+from .numpyTool import butter_numpy as butter
+from .numpyTool import filtfilt_numpy as filtfilt
 
 
 class WAVE:
