@@ -117,6 +117,7 @@ class Api:
             return {"success": False, "error": str(e)}
 
     def loadData(self, incid_content: str, trans_content: str):
+        print("loadData")
         self.__init__()
         inc_df = pandas.read_csv(io.StringIO(incid_content), skiprows=10)
         # 交换入射波数据的两列

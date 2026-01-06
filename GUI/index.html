@@ -703,6 +703,31 @@
 
 
     <script>
+        window.api = new Proxy({}, {
+            get: function(target, prop) {
+                return function(...args) {
+                    return new Promise((resolve, reject) => {
+                        const callApi = () => {
+                            if (window.pywebview && window.pywebview.api && window.pywebview.api[prop]) {
+                                window.pywebview.api[prop](...args).then(resolve).catch(reject);
+                                return true;
+                            }
+                            return false;
+                        };
+
+                        // 如果已经好了，直接调
+                        if (!callApi()) {
+                            // 否则监听 ready 事件，好了之后再调
+                            window.addEventListener('pywebviewready', callApi, { once: true });
+
+                            // 安全机制：如果5秒还没好，报错
+                            setTimeout(() => reject(`API 注入超时: ${prop}`), 5000);
+                        }
+                    });
+                };
+            }
+        });
+
         // 所有显示图表
         let displayList = {};
         // 当前显示图表容器
@@ -749,6 +774,7 @@
         });
 
 
+
         // 加载数据
         function loadData() {
             const incidentFile = window.incidentFile;
@@ -770,7 +796,7 @@
                 transmittedReader.onload = function(e) {
                     const transmittedContent = e.target.result;
 
-                    pywebview.api.loadData(incidentContent, transmittedContent)
+                    api.loadData(incidentContent, transmittedContent)
                         .then(function(result) {
                             if(result['success']) {
                                 document.getElementById('status').innerText = '数据加载完成';
@@ -1009,7 +1035,18 @@
                           id: "dataZoomX",
                           type: "slider",
                           xAxisIndex: [0],
+                        },
+                        {
+                          // 💡 关键：内置型数据缩放组件 (实现鼠标滚轮缩放)
+                          type: "inside",
+                          xAxisIndex: [0], // 作用于 x 轴
+                          // 启用鼠标滚轮缩放
+                          // zoomOnMouseWheel: 'shift', // 推荐：按住 shift 键时缩放
+                          zoomOnMouseWheel: true,   // 选项：不按键直接滚轮缩放
+                          // 启用鼠标拖拽平移
+                          moveOnMouseMove: true // 推荐：按住 Shift 键时拖拽平移
                         }
+
                     ]
                 };
 
