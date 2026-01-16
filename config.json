@@ -1,0 +1,41 @@
+{
+    "hopkinsonList": {
+        "20mm压杆": {
+            "bridgeType": "HALF",
+            "calibrationFactor": "0.011111",
+            "dampingCoefficient": "0",
+            "diameter": "20",
+            "excitationVoltage": "10",
+            "gageFactor": "1.8",
+            "lengthA": "0",
+            "lengthB": "0",
+            "material": "钢",
+            "mode": "compression",
+            "poissonRatio": "0.3",
+            "soundVelocity": "5200",
+            "youngs": "210"
+        },
+        "test": {
+            "bridgeType": "HALF",
+            "calibrationFactor": "0.011111",
+            "dampingCoefficient": "0",
+            "diameter": "20",
+            "excitationVoltage": "10",
+            "gageFactor": "1.8",
+            "lengthA": "0",
+            "lengthB": "0",
+            "material": "钢",
+            "mode": "compression",
+            "poissonRatio": "0.3",
+            "soundVelocity": "5200",
+            "youngs": "210"
+        }
+    },
+    "sample": {
+        "diameter": "7.5",
+        "length": "4.5",
+        "material": "钢",
+        "name": "Fe",
+        "number": "1"
+    }
+}
