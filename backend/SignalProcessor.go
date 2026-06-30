@@ -157,8 +157,6 @@ func (sp *SignalProcessor) AlignTime() []ShpbSignal {
 	sp.CropDataStartAndEnd["ref"].End = startRef + minLen
 
 	return []ShpbSignal{finalInc, finalRef, finalTrans}
-
-	return sp.AlignPeak()
 }
 
 func (sp *SignalProcessor) AlignManul(data map[string]float64) []ShpbSignal {
@@ -224,17 +222,21 @@ func (sp *SignalProcessor) Calculate(calculationType string) CalculationResult {
 	strainRef := make([]float64, n)
 	strainTrans := make([]float64, n)
 
-	coeff := sp.Hopkinson.Coefficient
-	if sp.Hopkinson.BridgeType == "HALF" {
-		coeff = coeff / 2.0
-	} else if sp.Hopkinson.BridgeType == "QURT" {
-		coeff = coeff / 4.0
+	incidentCoeff := sp.Hopkinson.IncidentCoefficient
+	transmittedCoeff := sp.Hopkinson.TransmittedCoefficient
+	switch sp.Hopkinson.BridgeType {
+	case "HALF":
+		incidentCoeff = incidentCoeff / 2.0
+		transmittedCoeff = transmittedCoeff / 2.0
+	case "QURT":
+		incidentCoeff = incidentCoeff / 4.0
+		transmittedCoeff = transmittedCoeff / 4.0
 	}
 
 	for i := 0; i < n; i++ {
-		strainInc[i] = wInc.Y[i] * coeff * compression
-		strainRef[i] = wRef.Y[i] * coeff * compression
-		strainTrans[i] = wTrans.Y[i] * coeff * compression
+		strainInc[i] = wInc.Y[i] * incidentCoeff * compression
+		strainRef[i] = wRef.Y[i] * incidentCoeff * compression
+		strainTrans[i] = wTrans.Y[i] * transmittedCoeff * compression
 	}
 
 	// 试样参数

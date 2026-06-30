@@ -1,35 +1,28 @@
 package backend
 
 type HopkinsonBar struct {
-	Type           string  `json:"Type"`
-	Mode           string  `json:"Mode"`
-	Material       string  `json:"Material"`
-	Diameter       float64 `json:"Diameter"`
-	YoungSPa       float64 `json:"YoungSPa"`
-	SoundVelocity  float64 `json:"SoundVelocity"`
-	BridgeType     string  `json:"BridgeType"`
-	GageFactor     float64 `json:"GageFactor"`
-	BridgeTensionV float64 `json:"BridgeTensionV"`
-	Coefficient    float64 `json:"Coefficient"`
-	FirstLength    float64 `json:"FirstLength"`
-	SecondLength   float64 `json:"SecondLength"`
-	PoissonRatio   float64 `json:"PoissonRatio"`
-	Damping        float64 `json:"Damping"`
+	Type                   string  `json:"Type"`
+	Mode                   string  `json:"Mode"`
+	Material               string  `json:"Material"`
+	Diameter               float64 `json:"Diameter"`
+	YoungSPa               float64 `json:"YoungSPa"`
+	SoundVelocity          float64 `json:"SoundVelocity"`
+	BridgeType             string  `json:"BridgeType"`
+	IncidentCoefficient    float64 `json:"IncidentCoefficient"`
+	TransmittedCoefficient float64 `json:"TransmittedCoefficient"`
 }
 
 func NewDefaultHopkinsonBar() HopkinsonBar {
 	return HopkinsonBar{
-		Type:           "ALT7075",
-		Mode:           "compression",
-		Material:       "钢",
-		Diameter:       20,           // 19mm 常用规格
-		YoungSPa:       210,          // 210 GPa
-		SoundVelocity:  5200.0,       // 5000 m/s
-		BridgeType:     "HalfBridge", // 全桥
-		GageFactor:     1.8,
-		BridgeTensionV: 10,
-		Coefficient:    0.0111111, // 默认标定系数
-		PoissonRatio:   0.25,
+		Type:                   "ALT7075",
+		Mode:                   "compression",
+		Material:               "钢",
+		Diameter:               20,           // 19mm 常用规格
+		YoungSPa:               210,          // 210 GPa
+		SoundVelocity:          5200.0,       // 5000 m/s
+		BridgeType:             "HalfBridge", // 全桥
+		IncidentCoefficient:    0.0111111,    // 默认入射杆标定系数
+		TransmittedCoefficient: 0.0111111,    // 默认透射杆标定系数
 	}
 }
 

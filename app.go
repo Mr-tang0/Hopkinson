@@ -5,17 +5,13 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log"
 	"math"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/xuri/excelize/v2"
@@ -23,8 +19,9 @@ import (
 
 // App struct
 type App struct {
-	ctx    context.Context
-	hopBar *backend.SignalProcessor
+	ctx           context.Context
+	hopBar        *backend.SignalProcessor
+	updateService *backend.UpdateService
 }
 
 type APIResponse struct {
@@ -42,6 +39,7 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.hopBar = backend.NewSignalProcessor()
+	a.updateService = &backend.UpdateService{}
 }
 
 // 定义配置文件的总结构
@@ -50,52 +48,8 @@ type ConfigData struct {
 	Sample        backend.Sample                  `json:"sample"`
 }
 
-type GitHubRelease struct {
-	TagName string `json:"tag_name"`
-	HTMLURL string `json:"html_url"`
-	Assets  []struct {
-		Name               string `json:"name"`
-		BrowserDownloadURL string `json:"browser_download_url"`
-	} `json:"assets"`
-}
-
-// CheckUpdate 只负责从 GitHub 获取最新发布信息
-func (a *App) GetLatestRelease() (map[string]string, error) {
-	repo := "Mr-tang0/Hopkinson"
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(url)
-	if err != nil {
-		fmt.Printf("HTTP请求失败: %v\n", err)
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	fmt.Printf("GitHub 返回状态码: %d\n", resp.StatusCode)
-	if resp.StatusCode != 200 {
-		return nil, errors.New("获取最新发布信息失败")
-	}
-
-	bodyBytes, _ := io.ReadAll(resp.Body)
-
-	var release GitHubRelease
-	if err := json.Unmarshal(bodyBytes, &release); err != nil {
-		fmt.Printf("JSON 解析失败: %v\n", err)
-		return nil, err
-	}
-
-	downloadUrl := release.HTMLURL // 兜底跳转到发布页
-	if len(release.Assets) > 0 {
-		downloadUrl = release.Assets[0].BrowserDownloadURL
-	}
-
-	println("release", release.TagName, downloadUrl)
-
-	return map[string]string{
-		"version":     release.TagName,
-		"downloadUrl": downloadUrl,
-	}, nil
+func (a *App) GetLatestRelease() (backend.UpdateResult, error) {
+	return a.updateService.GetUpdateInfo()
 }
 
 func (a *App) GetConfigPath() string {
@@ -155,13 +109,14 @@ func (a *App) LoadConfig() (ConfigData, error) {
 		bar.Diameter, _ = strconv.ParseFloat(m["diameter"], 64)
 		bar.YoungSPa, _ = strconv.ParseFloat(m["youngs"], 64)
 		bar.SoundVelocity, _ = strconv.ParseFloat(m["soundVelocity"], 64)
-		bar.GageFactor, _ = strconv.ParseFloat(m["gageFactor"], 64)
-		bar.BridgeTensionV, _ = strconv.ParseFloat(m["excitationVoltage"], 64)
-		bar.Coefficient, _ = strconv.ParseFloat(m["calibrationFactor"], 64)
-		bar.PoissonRatio, _ = strconv.ParseFloat(m["poissonRatio"], 64)
-		bar.Damping, _ = strconv.ParseFloat(m["dampingCoefficient"], 64)
-		bar.FirstLength, _ = strconv.ParseFloat(m["lengthA"], 64)
-		bar.SecondLength, _ = strconv.ParseFloat(m["lengthB"], 64)
+		bar.IncidentCoefficient, _ = strconv.ParseFloat(m["incidentCalibrationFactor"], 64)
+		bar.TransmittedCoefficient, _ = strconv.ParseFloat(m["transmittedCalibrationFactor"], 64)
+		if bar.IncidentCoefficient == 0 && m["calibrationFactor"] != "" {
+			bar.IncidentCoefficient, _ = strconv.ParseFloat(m["calibrationFactor"], 64)
+		}
+		if bar.TransmittedCoefficient == 0 && m["calibrationFactor"] != "" {
+			bar.TransmittedCoefficient, _ = strconv.ParseFloat(m["calibrationFactor"], 64)
+		}
 
 		res.HopkinsonList[name] = bar
 	}
@@ -191,23 +146,45 @@ func (a *App) SaveBarConfig(name string, bar backend.HopkinsonBar) (bool, error)
 	}
 
 	strBar := map[string]string{
-		"mode":               bar.Mode,
-		"material":           bar.Material,
-		"diameter":           fmt.Sprintf("%v", bar.Diameter),
-		"youngs":             fmt.Sprintf("%v", bar.YoungSPa),
-		"soundVelocity":      fmt.Sprintf("%v", bar.SoundVelocity),
-		"bridgeType":         bar.BridgeType,
-		"gageFactor":         fmt.Sprintf("%v", bar.GageFactor),
-		"excitationVoltage":  fmt.Sprintf("%v", bar.BridgeTensionV),
-		"calibrationFactor":  fmt.Sprintf("%v", bar.Coefficient),
-		"poissonRatio":       fmt.Sprintf("%v", bar.PoissonRatio),
-		"dampingCoefficient": fmt.Sprintf("%v", bar.Damping),
-		"lengthA":            fmt.Sprintf("%v", bar.FirstLength),
-		"lengthB":            fmt.Sprintf("%v", bar.SecondLength),
+		"mode":                         bar.Mode,
+		"material":                     bar.Material,
+		"diameter":                     fmt.Sprintf("%v", bar.Diameter),
+		"youngs":                       fmt.Sprintf("%v", bar.YoungSPa),
+		"soundVelocity":                fmt.Sprintf("%v", bar.SoundVelocity),
+		"bridgeType":                   bar.BridgeType,
+		"incidentCalibrationFactor":    fmt.Sprintf("%v", bar.IncidentCoefficient),
+		"transmittedCalibrationFactor": fmt.Sprintf("%v", bar.TransmittedCoefficient),
 	}
 
 	list := fullConfig["hopkinsonList"].(map[string]interface{})
 	list[name] = strBar
+
+	finalData, err := json.MarshalIndent(fullConfig, "", "    ")
+	if err != nil {
+		return false, err
+	}
+
+	err = os.WriteFile(a.GetConfigPath(), finalData, 0644)
+	return err == nil, err
+}
+
+func (a *App) DeleteBarConfig(name string) (bool, error) {
+	var fullConfig map[string]interface{}
+	data, err := os.ReadFile(a.GetConfigPath())
+	if err != nil {
+		return false, err
+	}
+
+	if err := json.Unmarshal(data, &fullConfig); err != nil {
+		return false, err
+	}
+
+	list, ok := fullConfig["hopkinsonList"].(map[string]interface{})
+	if !ok {
+		return false, nil
+	}
+
+	delete(list, name)
 
 	finalData, err := json.MarshalIndent(fullConfig, "", "    ")
 	if err != nil {
