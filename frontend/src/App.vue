@@ -190,9 +190,22 @@ const loadData = async () => {
       chartDataMap['原始波形'].curves[0].y = result.incWave.Y;
       chartDataMap['原始波形'].curves[1].x = result.transWave.X;
       chartDataMap['原始波形'].curves[1].y = result.transWave.Y;
+
+      const maxFreq = 500000;
+      const filterFFT = (x, y) => {
+        const newX = [], newY = [];
+        for (let i = 0; i < x.length && x[i] <= maxFreq; i++) {
+          newX.push(x[i]);
+          newY.push(y[i]);
+        }
+        return { x: newX, y: newY };
+      };
+      const incFFTFiltered = filterFFT(result.incFFT.X, result.incFFT.Y);
+      const transFFTFiltered = filterFFT(result.transFFT.X, result.transFFT.Y);
+
       chartDataMap['频谱图'].curves = [
-        { name: '入射波频谱', x: result.incFFT.X, y: result.incFFT.Y, color: '#8b5cf6' },
-        { name: '透射波频谱', x: result.transFFT.X, y: result.transFFT.Y, color: '#ec4899' }
+        { name: '入射波频谱', x: incFFTFiltered.x, y: incFFTFiltered.y, color: '#8b5cf6' },
+        { name: '透射波频谱', x: transFFTFiltered.x, y: transFFTFiltered.y, color: '#ec4899' }
       ];
       showChart('原始波形');
     }
