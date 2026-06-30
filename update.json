@@ -1,0 +1,10 @@
+{
+    "name":"Hopkinson",
+    "version":"V1.0.2",
+    "source":{
+        "github":"https://api.github.com/repos/Mr-tang0/Hopkinson/releases/latest",
+        "gitcode":"https://gitcode.com/Mr-tang0/Hopkinson.git",
+        "pims":"http://192.168.1.100:8080/Hopkinson/releases/latest"
+    },
+    "url":"https://api.github.com/repos/Mr-tang0/Hopkinson/releases/latest"
+}

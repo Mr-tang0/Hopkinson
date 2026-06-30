@@ -18,7 +18,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:  "Hopkinson Decoder v1.0.1",
+		Title:  "Hopkinson Decoder v1.0.2",
 		Width:  1024,
 		Height: 768,
 		AssetServer: &assetserver.Options{
