@@ -131,6 +131,83 @@ func (sp *SignalProcessor) AlignPeak() []ShpbSignal {
 	return []ShpbSignal{finalInc, finalRef, finalTrans}
 }
 
+func (sp *SignalProcessor) AlignGB() []ShpbSignal {
+	if sp.CropDataStartAndEnd == nil {
+		return nil
+	}
+	if _, ok := sp.CropDataStartAndEnd["inc"]; !ok {
+		return nil
+	}
+	if _, ok := sp.CropDataStartAndEnd["ref"]; !ok {
+		return nil
+	}
+	if _, ok := sp.CropDataStartAndEnd["trans"]; !ok {
+		return nil
+	}
+
+	peakInc := FindFirstMajorPeak(&sp.IncWaveCrop, 1.0)
+	peakRef := FindFirstMajorPeak(&sp.RefWaveCrop, 1.0)
+	peakTrans := FindFirstMajorPeak(&sp.TransWaveCrop, 1.0)
+	if peakInc == -1 || peakRef == -1 || peakTrans == -1 {
+		return nil
+	}
+
+	baseInc := findGBBaseIndex(sp.IncWaveCrop.Y, peakInc)
+	baseRef := findGBBaseIndex(sp.RefWaveCrop.Y, peakRef)
+	baseTrans := findGBBaseIndex(sp.TransWaveCrop.Y, peakTrans)
+	if baseInc == -1 || baseRef == -1 || baseTrans == -1 {
+		return nil
+	}
+
+	minLen := len(sp.IncWaveCrop.Y)
+	if len(sp.RefWaveCrop.Y) < minLen {
+		minLen = len(sp.RefWaveCrop.Y)
+	}
+	if len(sp.TransWaveCrop.Y) < minLen {
+		minLen = len(sp.TransWaveCrop.Y)
+	}
+
+	shiftRef := baseInc - baseRef
+	shiftTrans := baseInc - baseTrans
+
+	if sp.CropDataStartAndEnd == nil {
+		return nil
+	}
+
+	// 入射波
+	if _, ok := sp.CropDataStartAndEnd["inc"]; !ok {
+		println("!!! 错误: Key 'inc' 不存在")
+		return nil
+	}
+	startInc := sp.CropDataStartAndEnd["inc"].Start
+	finalInc := cropSlice(&sp.IncWaveShow, startInc, minLen)
+
+	// 反射波
+	if _, ok := sp.CropDataStartAndEnd["ref"]; !ok {
+		println("!!! 错误: Key 'ref' 不存在")
+		return nil
+	}
+	startRef := sp.CropDataStartAndEnd["ref"].Start
+	finalRef := cropSlice(&sp.IncWaveShow, startRef-shiftRef, minLen)
+
+	// 透射波
+	if _, ok := sp.CropDataStartAndEnd["trans"]; !ok {
+		println("!!! 错误: Key 'trans' 不存在")
+		return nil
+	}
+	startTrans := sp.CropDataStartAndEnd["trans"].Start
+
+	finalTrans := cropSlice(&sp.TransWaveShow, startTrans-shiftTrans, minLen)
+
+	sp.CropDataStartAndEnd["inc"].End = startInc + minLen
+	sp.CropDataStartAndEnd["ref"].Start = startRef - shiftRef
+	sp.CropDataStartAndEnd["ref"].End = startRef - shiftRef + minLen
+	sp.CropDataStartAndEnd["trans"].Start = startTrans - shiftTrans
+	sp.CropDataStartAndEnd["trans"].End = startTrans - shiftTrans + minLen
+
+	return []ShpbSignal{finalInc, finalRef, finalTrans}
+}
+
 func (sp *SignalProcessor) AlignTime() []ShpbSignal {
 	minLen := len(sp.IncWaveCrop.Y)
 	if len(sp.RefWaveCrop.Y) < minLen {
@@ -192,6 +269,9 @@ type CalculationResult struct {
 	StrainTime     ShpbSignal `json:"strain_time"`      // 应变-时间
 	StrainRateTime ShpbSignal `json:"strain_rate_time"` // 应变率-时间
 	StressTime     ShpbSignal `json:"stress_time"`      // 应力-时间
+	IncWaveCrop    ShpbSignal `json:"inc_wave_crop"`    // 入射波-裁剪
+	RefWaveCrop    ShpbSignal `json:"ref_wave_crop"`    // 反射波-裁剪
+	TransWaveCrop  ShpbSignal `json:"trans_wave_crop"`  // 透射波-裁剪
 }
 
 func (sp *SignalProcessor) Calculate(calculationType string) CalculationResult {
@@ -281,6 +361,9 @@ func (sp *SignalProcessor) Calculate(calculationType string) CalculationResult {
 		StrainRateTime: ShpbSignal{X: wInc.X, Y: engStrainRate},
 		StressTime:     ShpbSignal{X: wInc.X, Y: engStressMpa},
 		StressStrain:   ShpbSignal{X: engStrain, Y: engStressMpa},
+		IncWaveCrop:    sp.IncWaveCrop,
+		RefWaveCrop:    sp.RefWaveCrop,
+		TransWaveCrop:  sp.TransWaveCrop,
 	}
 	return sp.Result
 }

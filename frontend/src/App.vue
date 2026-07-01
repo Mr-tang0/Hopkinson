@@ -24,37 +24,47 @@ import SampleModal from './components/SampleModal.vue';
 import About from './components/About.vue'; 
 
 
-const showUpdateModal = ref(false)
-const latestInfo = ref({ version: '', url: '', currentVersion: '' })
+// --- 1. 全局状态 ---
+// UI 状态
+const isLeftCollapsed = ref(false);
+const isAboutVisible = ref(false);
+const showSerialChooseModal = ref(false);
+const showNewHopkinsonModal = ref(false);
+const showNewSampleModal = ref(false);
+const showUpdateModal = ref(false);
 
-// --- 1. 响应式状态与变量 ---
+// 图表状态
 const chartRef = ref(null);
 let myChart = null;
-const isLeftCollapsed = ref(false);
 const currentTab = ref('原始波形');
 const chartTabs = ref(['原始波形', '频谱图', '时域对齐', '计算结果']);
 
-// 模态框与选择逻辑
-const showSerialChooseModal = ref(false); // 数据选择模态框
-const showNewHopkinsonModal = ref(false); // 新增Hopkinson模态框
-const showNewSampleModal = ref(false); // 新增样本模态框
-const isAboutVisible = ref(false); // 控制about的状态
+// 点击固定点
+const clickedPoint = ref(null);  // { x, y, seriesName, color, chartX, chartY }
 
-const isCtrlPressed = ref(false); 
+// 数据选择状态
+const isCtrlPressed = ref(false);
 const selectedType = ref('incident');
-const calculating = ref(false);
-const progress = ref(0);
-
 const range = reactive({ start: 0, end: 0 });
 
 // 参数配置
 const filterParams = reactive({ low: 0, high: 180000 });
 const waveParams = reactive({ inc: 0, trans: 0 });
-const alignMethod = ref("1");
-const alignOffsetParams = reactive({ inc: 0, trans: 0 ,ref: 0});
+const alignMethod = ref("gb");
+const alignOffsetParams = reactive({ inc: 0, trans: 0, ref: 0 });
 const calcMethod = ref("incAndTrans");
 
-// 数据存储 Map
+// 计算与更新状态
+const calculating = ref(false);
+const progress = ref(0);
+const latestInfo = ref({ version: '', url: '', currentVersion: '' });
+
+// 文件状态
+let incFile = null, transFile = null;
+const incFileName = ref('选择入射波');
+const transFileName = ref('选择透射波');
+
+// 数据存储
 const chartDataMap = reactive({
   '原始波形': {
     xlabel: '时间 (s)', ylabel: '振幅 (V)',
@@ -87,15 +97,42 @@ const chartDataMap = reactive({
 // --- 2. ECharts 核心逻辑 ---
 const initChart = () => {
   myChart = echarts.init(chartRef.value);
-  myChart.on('brushEnd', (params) => {
-    const area = params.areas[0];
-    if (area && area.coordRange) {
-      range.start = area.coordRange[0];
-      range.end = area.coordRange[1];
-      showSerialChooseModal.value = true;
-    }
-  });
+  myChart.on('brushEnd', handleBrushEnd);
+  myChart.on('click', handleChartClick);
   showChart('原始波形');
+};
+
+const handleBrushEnd = (params) => {
+  clearBrushArea();
+  exitBrushMode();
+
+  const area = params.areas[0];
+  if (!area || !area.coordRange) return;
+
+  range.start = area.coordRange[0];
+  range.end = area.coordRange[1];
+  showSerialChooseModal.value = true;
+};
+
+// 点击曲线固定点，便于复制 X/Y 值
+const handleChartClick = (params) => {
+  if (!params || !params.value || !Array.isArray(params.value)) {
+    if (clickedPoint.value) clickedPoint.value = null;
+    return;
+  }
+  const pos = myChart.convertToPixel({ seriesIndex: params.seriesIndex }, params.value);
+  clickedPoint.value = {
+    x: parseFloat(params.value[0]),
+    y: parseFloat(params.value[1]),
+    seriesName: params.seriesName,
+    color: params.color,
+    pageX: pos ? pos[0] : 0,
+    pageY: pos ? pos[1] : 0,
+  };
+};
+
+const dismissClickPoint = () => {
+  clickedPoint.value = null;
 };
 
 const showChart = async (tabName) => {
@@ -106,21 +143,37 @@ const showChart = async (tabName) => {
   const MAX_POINTS = 50000;
   const series = config.curves.map(curve => {
     let rawX = curve.x || [], rawY = curve.y || [];
+    const displayY = rawY.map(y => getDisplayY(tabName, curve.name, y));
+    // const shouldNormalize = tabName === '时域对齐';
+    const shouldNormalize = false;
+    const minY = shouldNormalize ? Math.min(...displayY) : 0;
+    const maxY = shouldNormalize ? Math.max(...displayY) : 0;
+    const yRange = maxY - minY;
     let sampledData = [];
     
     if (rawX.length > MAX_POINTS) {
       const step = Math.floor(rawX.length / MAX_POINTS);
       for (let i = 0; i < rawX.length; i += step) {
-        sampledData.push([rawX[i], rawY[i]]);
+        const y = shouldNormalize ? normalizeDisplayY(displayY[i], minY, yRange) : displayY[i];
+        sampledData.push([rawX[i], y]);
       }
     } else {
-      sampledData = rawX.map((x, i) => [x, rawY[i]]);
+      sampledData = rawX.map((x, i) => {
+        const y = shouldNormalize ? normalizeDisplayY(displayY[i], minY, yRange) : displayY[i];
+        return [x, y];
+      });
     }
 
     return {
-      name: curve.name, type: 'line', symbol: 'none',
+      name: curve.name, type: 'line',
+      symbol: 'circle', showSymbol: false, symbolSize: 8,
       sampling: 'lttb', large: true, smooth: false,
-      lineStyle: { color: curve.color, width: 1.5 },
+      itemStyle: { color: curve.color },
+      lineStyle: { color: curve.color, width: 2 },
+      emphasis: {
+        itemStyle: { color: curve.color, borderColor: curve.color, borderWidth: 3 },
+        lineStyle: { width: 2 },
+      },
       data: sampledData
     };
   });
@@ -128,8 +181,37 @@ const showChart = async (tabName) => {
   myChart.setOption({
     title: { text: tabName, left: 'center', top: 10 },
     animation: false,
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross'} },
-    toolbox:{ show: false},
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross', label: { backgroundColor: '#6a7985' } },
+      formatter: function(params) {
+        if (!params || params.length === 0) return '';
+        let html = '<div style="font-size:13px;line-height:2;max-width:400px">';
+        params.forEach(p => {
+          if (p.value && Array.isArray(p.value)) {
+            const xVal = parseFloat(p.value[0]).toExponential(6);
+            const yVal = parseFloat(p.value[1]).toExponential(6);
+            html += `<div style="display:flex;align-items:center;gap:4px;white-space:nowrap">`;
+            html += `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${p.color};flex-shrink:0"></span>`;
+            html += `<b style="flex-shrink:0">${p.seriesName}</b>`;
+            html += ` X: <code style="background:#f0f0f0;padding:0 6px;border-radius:3px;user-select:all;cursor:pointer">${xVal}</code>`;
+            html += ` Y: <code style="background:#f0f0f0;padding:0 6px;border-radius:3px;user-select:all;cursor:pointer">${yVal}</code>`;
+            html += `</div>`;
+          }
+        });
+        html += '</div>';
+        return html;
+      }
+    },
+    toolbox:{
+      show: true,
+      feature: {
+        saveAsImage: { title: '保存为图片' }
+      },
+      right: 40,
+      top: 50,
+      iconStyle: { borderColor: '#94a3b8' }
+    },
     legend: { bottom: 10 },
     grid: { top: '15%', left: '10%', right: '10%', bottom: '15%', containLabel: true },
     xAxis: { type: 'value', name: config.xlabel, nameLocation: 'middle', nameGap: 30 },
@@ -156,10 +238,21 @@ const showChart = async (tabName) => {
   myChart.resize();
 };
 
-// --- 3. 后端通信与文件处理 ---
-let incFile = null, transFile = null;
-const incFileName = ref('选择入射波');
-const transFileName = ref('选择透射波');
+const getDisplayY = (tabName, curveName, y) => {
+  if (tabName === '时域对齐' && curveName === '反射波') {
+    return -y;
+  }
+  return y;
+};
+
+const normalizeDisplayY = (y, minY, yRange) => {
+  if (!Number.isFinite(y) || !Number.isFinite(minY) || !Number.isFinite(yRange) || yRange === 0) {
+    return 0;
+  }
+  return (y - minY) / yRange;
+};
+
+// --- 3. 文件加载与后端通信 ---
 
 const handleFileChange = (e, type) => {
   const file = e.target.files[0];
@@ -423,15 +516,19 @@ const exportResults = async () => {
   }
 };
 
-// --- 4. 交互与生命周期 ---
-const lineXView = () => {
+// --- 4. 图表交互 ---
+const enterBrushMode = () => {
   myChart.dispatchAction({ type: 'takeGlobalCursor', key: 'brush', brushOption: { brushType: 'lineX' } });
 };
 
-const clearView = () => {
+const clearBrushArea = () => {
   myChart.dispatchAction({ type: 'brush', areas: [] });
-  myChart.dispatchAction({ type: 'takeGlobalCursor', key: false });
 };
+
+const exitBrushMode = () => {
+  myChart.dispatchAction({ type: 'takeGlobalCursor', key: 'brush', brushOption: { brushType: false } });
+};
+
 
 const toggleSidebar = () => {
   isLeftCollapsed.value = !isLeftCollapsed.value;
@@ -439,47 +536,51 @@ const toggleSidebar = () => {
 };
 
 window.addEventListener('keydown', (e) => {
-  if (e.ctrlKey && !isCtrlPressed.value && myChart) {
+  if (e.key === 'Control' && !isCtrlPressed.value && myChart) {
     isCtrlPressed.value = true;
-    lineXView();
+    enterBrushMode();
   }
 });
 
 window.addEventListener('keyup', (e) => {
   if (e.key === 'Control' && isCtrlPressed.value && myChart) {
     isCtrlPressed.value = false;
-    clearView();
   }
 });
 
-onMounted(async () => {
-  initChart();
-  window.addEventListener('resize', () => myChart?.resize());
-  InitSignalProcessor();
-
+// --- 5. 更新检查 ---
+const checkUpdate = async () => {
   try {
-    const res = await GetLatestRelease()
+    const res = await GetLatestRelease();
     if (res && res.latestVersion) {
       latestInfo.value = {
         version: res.latestVersion,
         url: res.downloadUrl,
         currentVersion: res.currentVersion
-      }
-      showUpdateModal.value = true
+      };
+      showUpdateModal.value = true;
     }
   } catch (e) {
-    console.error("检查更新失败", e)
+    console.error("检查更新失败", e);
   }
-});
+};
 
 const doDownload = (source) => {
-  let url = latestInfo.value.url
+  let url = latestInfo.value.url;
   if (source === 'accelerate') {
-    url = 'https://ghfast.top/https://' + url.replace('https://', '')
+    url = 'https://ghfast.top/https://' + url.replace('https://', '');
   }
-  BrowserOpenURL(url) 
-  showUpdateModal.value = false
-}
+  BrowserOpenURL(url);
+  showUpdateModal.value = false;
+};
+
+// --- 6. 生命周期 ---
+onMounted(async () => {
+  initChart();
+  window.addEventListener('resize', () => myChart?.resize());
+  InitSignalProcessor();
+  await checkUpdate();
+});
 
 // 消息通知
 const msgBoxRef = ref(null);
@@ -547,6 +648,18 @@ provide('globalNotify', notify);
 
       <div class="chart-wrapper">
         <div ref="chartRef" class="echarts-dom"></div>
+        <Transition name="fade">
+          <div v-if="clickedPoint" class="pin-tooltip">
+            <div class="pin-header">
+              <span class="pin-dot" :style="{ background: clickedPoint.color }"></span>
+              <b>{{ clickedPoint.seriesName }}</b>
+              <span class="pin-close" @click.stop="dismissClickPoint">✕</span>
+            </div>
+            <div class="pin-row">X = <code class="pin-val">{{ clickedPoint.x.toExponential(6) }}</code></div>
+            <div class="pin-row">Y = <code class="pin-val">{{ clickedPoint.y.toExponential(6) }}</code></div>
+            <!-- <div class="pin-hint">点击此卡片关闭</div> -->
+          </div>
+        </Transition>
       </div>
     </main>
 
@@ -602,12 +715,13 @@ provide('globalNotify', notify);
             <label>时域对齐</label>
             <div class="input-item">
               <select class="modern-select" v-model="alignMethod">
-                <option value="1">波峰对齐</option>
-                <option value="2">时间轴对齐</option>
-                <option value="3">手动调整</option>
+                <option value="gb">国标对齐</option>
+                <option value="peak">波峰对齐</option>
+                <option value="time">时间轴对齐</option>
+                <option value="manual">手动调整</option>
               </select>
             </div>
-            <div v-if="alignMethod==3" class="sub-panel">
+            <div v-if="alignMethod=='manual'" class="sub-panel">
 
               <div class="input-item">
                 <span class="sub-label">入射波:
@@ -616,17 +730,18 @@ provide('globalNotify', notify);
                 </span>
               </div>
               <div class="input-item">
-                <span class="sub-label">透射波:
-                  <input type="range" v-model.number="alignOffsetParams.trans" min="-1000" max="1000" @change="syncAlignOffset" />
-                  <input type="number" v-model.number="alignOffsetParams.trans" class="mini-input" @keyup.enter="syncAlignOffset" />
-                </span>
-              </div>
-              <div class="input-item">
                 <span class="sub-label">反射波:
                   <input type="range" v-model.number="alignOffsetParams.ref" min="-1000" max="1000" @change="syncAlignOffset" />
                   <input type="number" v-model.number="alignOffsetParams.ref" class="mini-input" @keyup.enter="syncAlignOffset" />
                 </span>
               </div>
+              <div class="input-item">
+                <span class="sub-label">透射波:
+                  <input type="range" v-model.number="alignOffsetParams.trans" min="-1000" max="1000" @change="syncAlignOffset" />
+                  <input type="number" v-model.number="alignOffsetParams.trans" class="mini-input" @keyup.enter="syncAlignOffset" />
+                </span>
+              </div>
+              
 
             </div>
             <button class="action-btn primary"@click="handleAlign">应用对齐</button>
@@ -660,7 +775,7 @@ provide('globalNotify', notify);
             <div v-else class="result-container"> 
             </div>
 
-            <button class="action-btn outline-btn" @click="exportResults">导出结果 (Excel/csv)</button>
+            <button class="action-btn outline-btn" @click="exportResults">导出结果</button>
           </div>
         </section>
 
@@ -704,7 +819,7 @@ provide('globalNotify', notify);
   </div>
 
   <Transition name="fade">
-    <div v-if="showUpdateModal" class="update-modal-overlay">
+    <div v-if="showUpdateModal" class="update-modal-overlay" @click="showUpdateModal = false">
       <div class="update-card">
         <div class="update-icon">🚀</div>
         <h2>发现新版本！</h2>
@@ -728,6 +843,7 @@ provide('globalNotify', notify);
   height: 100vh;
   background-color: #f1f5f9;
   overflow: hidden;
+  user-select: none;
 }
 
 /* 侧边栏通用样式 */
@@ -858,6 +974,38 @@ provide('globalNotify', notify);
 }
 
 .echarts-dom { width: 100%; height: 100%; }
+
+/* 点击固定点卡片 */
+.chart-wrapper { position: relative; }
+.pin-tooltip {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: #6eb7e8;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  font-size: 13px;
+  line-height: 1.6;
+  z-index: 100;
+  cursor: pointer;
+  min-width: 180px;
+  user-select: text;
+}
+.pin-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.pin-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.pin-close { margin-left: auto; color: #94a3b8; font-size: 14px; cursor: pointer; }
+.pin-row { white-space: nowrap; }
+.pin-val {
+  background: #6eb7e8;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-family: Consolas, monospace;
+  user-select: all;
+  cursor: text;
+}
+.pin-hint { font-size: 11px; color: #94a3b8; margin-top: 4px; text-align: right; }
 
 /* UI 组件 */
 .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 30px; }

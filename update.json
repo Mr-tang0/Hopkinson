@@ -1,6 +1,6 @@
 {
     "name":"Hopkinson",
-    "version":"V1.0.2",
+    "version":"V1.0.3",
     "source":{
         "github":"https://api.github.com/repos/Mr-tang0/Hopkinson/releases/latest",
         "gitcode":"https://gitcode.com/Mr-tang0/Hopkinson.git",

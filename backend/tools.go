@@ -124,6 +124,22 @@ func FindFirstMajorPeak(s *ShpbSignal, sigma float64) int {
 	return -1
 }
 
+func findGBBaseIndex(y []float64, peak int) int {
+	if peak <= 0 || peak >= len(y) {
+		return -1
+	}
+
+	threshold := math.Abs(y[peak]) / 10.0
+	for i := peak; i >= 0; i-- {
+		if math.Abs(y[i]) <= threshold {
+			println("找到第一个有效顶点索引:", i, "幅值:", y[i], "peak:", y[peak])
+			return i
+		}
+	}
+
+	return -1
+}
+
 // cropSlice 辅助函数：根据起始索引截取固定长度，并进行时间归零
 func cropSlice(src *ShpbSignal, start int, length int) ShpbSignal {
 	newY := make([]float64, length)

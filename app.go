@@ -2,7 +2,9 @@ package main
 
 import (
 	"Hopkinson_Decoder/backend"
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/xuri/excelize/v2"
@@ -421,19 +424,18 @@ func (a *App) TimeAlign(AlignType string) AlignResult {
 	var alignedWaves []backend.ShpbSignal
 
 	switch AlignType {
-	case "1":
+	case "peak":
 		alignedWaves = a.hopBar.AlignPeak()
-	case "2":
+	case "time":
 		alignedWaves = a.hopBar.AlignTime()
+	case "gb":
+		alignedWaves = a.hopBar.AlignGB()
 	default:
-
-	}
-
-	if alignedWaves == nil {
 		return AlignResult{
 			Success: false,
-			Message: "对齐失败：未找到有效峰值",
+			Message: "无效的对齐类型",
 		}
+
 	}
 
 	a.hopBar.IncWaveCrop = alignedWaves[0]
@@ -489,6 +491,7 @@ func (a *App) ExportData() string {
 		Filters: []runtime.FileFilter{
 			{DisplayName: "CSV Files (*.csv)", Pattern: "*.csv"},
 			{DisplayName: "Excel Files (*.xlsx)", Pattern: "*.xlsx"},
+			{DisplayName: "MatLab Files (*.mat)", Pattern: "*.mat"},
 		},
 	})
 
@@ -510,20 +513,29 @@ func (a *App) ExportData() string {
 
 func (a *App) saveToFile(path string) error {
 	res := a.hopBar.Result
-	if len(res.StressTime.X) == 0 {
-		return fmt.Errorf("没有可导出的计算结果")
+
+	// 检查是否有计算结果 或 裁剪波形数据
+	hasCalc := len(res.StressTime.X) > 0
+	hasCrop := len(res.IncWaveCrop.Y) > 0 || len(res.RefWaveCrop.Y) > 0 || len(res.TransWaveCrop.Y) > 0
+
+	if !hasCalc && !hasCrop {
+		return fmt.Errorf("没有可导出的数据，请先完成计算或截取波形")
 	}
 
-	// 1. 获取后缀名并转为小写
+	// 获取后缀名并转为小写
 	ext := strings.ToLower(filepath.Ext(path))
 
-	// 2. 分支处理
-	if ext == ".csv" {
+	// 分支处理
+	switch ext {
+	case ".csv":
 		return a.saveAsCSV(path, res)
+	case ".mat":
+		return a.saveAsMatLab(path, res)
+	case ".xlsx":
+		return a.saveAsExcel(path, res)
+	default:
+		return fmt.Errorf("不支持的文件格式")
 	}
-
-	// 默认或 .xlsx 使用 Excelize
-	return a.saveAsExcel(path, res)
 }
 
 // 保存为真正的 CSV 格式
@@ -540,21 +552,46 @@ func (a *App) saveAsCSV(path string, res backend.CalculationResult) error {
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// 写入表头
-	writer.Write([]string{"时间 (s)", "应变 (Strain)", "应变率 (1/s)", "应力 (MPa)"})
+	hasCalc := len(res.StressTime.X) > 0
 
-	// 写入数据
-	for i := 0; i < len(res.StressTime.X); i++ {
-		record := []string{
-			fmt.Sprintf("%.8f", res.StrainTime.X[i]),
-			fmt.Sprintf("%.8f", res.StrainTime.Y[i]),
-			fmt.Sprintf("%.8f", res.StrainRateTime.Y[i]),
-			fmt.Sprintf("%.8f", res.StressTime.Y[i]),
+	if hasCalc {
+		// 计算结果表头
+		writer.Write([]string{"时间 (s)", "应变 (Strain)", "应变率 (1/s)", "应力 (MPa)"})
+		for i := 0; i < len(res.StressTime.X); i++ {
+			writer.Write([]string{
+				fmt.Sprintf("%.8f", res.StrainTime.X[i]),
+				fmt.Sprintf("%.8f", res.StrainTime.Y[i]),
+				fmt.Sprintf("%.8f", res.StrainRateTime.Y[i]),
+				fmt.Sprintf("%.8f", res.StressTime.Y[i]),
+			})
 		}
-		if err := writer.Write(record); err != nil {
-			return err
-		}
+		writer.Write(nil) // 空行
 	}
+
+	// 裁剪波形数据（各自独立 X 轴）
+	type cropInfo struct {
+		name string
+		x, y []float64
+	}
+	crops := []cropInfo{
+		{"入射波", res.IncWaveCrop.X, res.IncWaveCrop.Y},
+		{"反射波", res.RefWaveCrop.X, res.RefWaveCrop.Y},
+		{"透射波", res.TransWaveCrop.X, res.TransWaveCrop.Y},
+	}
+	for _, c := range crops {
+		if len(c.x) == 0 {
+			continue
+		}
+		writer.Write([]string{c.name + " 时间 (s)", c.name + " 幅值 (V)"})
+		for i := 0; i < len(c.x); i++ {
+			writer.Write([]string{
+				fmt.Sprintf("%.8f", c.x[i]),
+				fmt.Sprintf("%.8f", c.y[i]),
+			})
+		}
+		writer.Write(nil)
+	}
+
 	return nil
 }
 
@@ -563,27 +600,228 @@ func (a *App) saveAsExcel(path string, res backend.CalculationResult) error {
 	f := excelize.NewFile()
 	defer f.Close()
 
-	sheet := "TimeHistory"
-	f.SetSheetName("Sheet1", sheet)
+	hasCalc := len(res.StressTime.X) > 0
 
-	sw, err := f.NewStreamWriter(sheet)
-	if err != nil {
-		return err
+	if hasCalc {
+		sheet := "TimeHistory"
+		f.SetSheetName("Sheet1", sheet)
+
+		sw, err := f.NewStreamWriter(sheet)
+		if err != nil {
+			return err
+		}
+
+		sw.SetRow("A1", []interface{}{"时间 (s)", "应变", "应变率 (1/s)", "应力 (MPa)"})
+		for i := 0; i < len(res.StressTime.X); i++ {
+			row := i + 2
+			cell, _ := excelize.CoordinatesToCellName(1, row)
+			sw.SetRow(cell, []interface{}{
+				res.StrainTime.X[i],
+				res.StrainTime.Y[i],
+				res.StrainRateTime.Y[i],
+				res.StressTime.Y[i],
+			})
+		}
+		sw.Flush()
 	}
 
-	sw.SetRow("A1", []interface{}{"时间 (s)", "应变", "应变率 (1/s)", "应力 (MPa)"})
-
-	for i := 0; i < len(res.StressTime.X); i++ {
-		row := i + 2
-		cell, _ := excelize.CoordinatesToCellName(1, row)
-		sw.SetRow(cell, []interface{}{
-			res.StrainTime.X[i],
-			res.StrainTime.Y[i],
-			res.StrainRateTime.Y[i],
-			res.StressTime.Y[i],
-		})
+	// 裁剪波形写入单独 sheet
+	type cropInfo struct {
+		name string
+		x, y []float64
 	}
-	sw.Flush()
+	crops := []cropInfo{
+		{"IncWave", res.IncWaveCrop.X, res.IncWaveCrop.Y},
+		{"RefWave", res.RefWaveCrop.X, res.RefWaveCrop.Y},
+		{"TransWave", res.TransWaveCrop.X, res.TransWaveCrop.Y},
+	}
+	hasAnyCrop := false
+	for _, c := range crops {
+		if len(c.x) > 0 {
+			hasAnyCrop = true
+			break
+		}
+	}
+	if hasAnyCrop {
+		sheet := "CropWaves"
+		f.NewSheet(sheet)
+		sw, err := f.NewStreamWriter(sheet)
+		if err != nil {
+			return err
+		}
+
+		// 表头：三组 (时间, 幅值)
+		headers := []interface{}{}
+		for _, c := range crops {
+			headers = append(headers, c.name+" 时间", c.name+" 幅值")
+		}
+		sw.SetRow("A1", headers)
+
+		maxLen := 0
+		for _, c := range crops {
+			if len(c.x) > maxLen {
+				maxLen = len(c.x)
+			}
+		}
+
+		for i := 0; i < maxLen; i++ {
+			row := i + 2
+			cell, _ := excelize.CoordinatesToCellName(1, row)
+			vals := []interface{}{}
+			for _, c := range crops {
+				if i < len(c.x) {
+					vals = append(vals, c.x[i], c.y[i])
+				} else {
+					vals = append(vals, "", "")
+				}
+			}
+			sw.SetRow(cell, vals)
+		}
+		sw.Flush()
+	}
 
 	return f.SaveAs(path)
 }
+
+func (a *App) saveAsMatLab(path string, res backend.CalculationResult) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := writeMatlabHeader(file); err != nil {
+		return err
+	}
+
+	hasCalc := len(res.StressTime.X) > 0
+
+	if hasCalc {
+		timeData := res.StrainTime.X
+		timeHistory := interleaveColumns(timeData, res.StrainTime.Y, res.StrainRateTime.Y, res.StressTime.Y)
+		calcVars := []struct {
+			name string
+			rows int
+			cols int
+			data []float64
+		}{
+			{name: "time_s", rows: len(timeData), cols: 1, data: timeData},
+			{name: "strain", rows: len(res.StrainTime.Y), cols: 1, data: res.StrainTime.Y},
+			{name: "strain_rate_1_s", rows: len(res.StrainRateTime.Y), cols: 1, data: res.StrainRateTime.Y},
+			{name: "stress_mpa", rows: len(res.StressTime.Y), cols: 1, data: res.StressTime.Y},
+			{name: "time_history", rows: len(timeHistory) / 4, cols: 4, data: timeHistory},
+		}
+		for _, v := range calcVars {
+			if err := writeMatlabDoubleMatrix(file, v.name, v.rows, v.cols, v.data); err != nil {
+				return err
+			}
+		}
+	}
+
+	// 裁剪波形：分别保存 X 和 Y
+	type cropInfo struct {
+		name string
+		x, y []float64
+	}
+	crops := []cropInfo{
+		{"inc_wave", res.IncWaveCrop.X, res.IncWaveCrop.Y},
+		{"ref_wave", res.RefWaveCrop.X, res.RefWaveCrop.Y},
+		{"trans_wave", res.TransWaveCrop.X, res.TransWaveCrop.Y},
+	}
+	for _, c := range crops {
+		if len(c.x) == 0 {
+			continue
+		}
+		// 每条波写入 (X, Y) 为 Nx2 矩阵
+		xy := interleaveColumns(c.x, c.y)
+		if err := writeMatlabDoubleMatrix(file, c.name, len(c.x), 2, xy); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeMatlabHeader(file *os.File) error {
+	description := fmt.Sprintf("MATLAB 5.0 MAT-file, Created by Hopkinson Decoder on %s", time.Now().Format(time.RFC3339))
+	header := make([]byte, 128)
+	copy(header[:116], []byte(description))
+	header[124] = 0
+	header[125] = 1
+	header[126] = 'I'
+	header[127] = 'M'
+	_, err := file.Write(header)
+	return err
+}
+
+func writeMatlabDoubleMatrix(file *os.File, name string, rows int, cols int, data []float64) error {
+	if rows < 0 || cols < 0 || len(data) != rows*cols {
+		return fmt.Errorf("invalid MATLAB matrix %q dimensions", name)
+	}
+
+	var payload bytes.Buffer
+
+	writeMatlabDataElement(&payload, miUINT32, []uint32{mxDOUBLE_CLASS, 0})
+	writeMatlabDataElement(&payload, miINT32, []int32{int32(rows), int32(cols)})
+	writeMatlabDataElement(&payload, miINT8, []byte(name))
+	writeMatlabDataElement(&payload, miDOUBLE, data)
+
+	matrixBytes := payload.Bytes()
+	if err := binary.Write(file, binary.LittleEndian, uint32(miMATRIX)); err != nil {
+		return err
+	}
+	if err := binary.Write(file, binary.LittleEndian, uint32(len(matrixBytes))); err != nil {
+		return err
+	}
+	_, err := file.Write(matrixBytes)
+	return err
+}
+
+func writeMatlabDataElement[T byte | int32 | uint32 | float64](builder *bytes.Buffer, dataType uint32, values []T) {
+	var raw bytes.Buffer
+	for _, value := range values {
+		_ = binary.Write(&raw, binary.LittleEndian, value)
+	}
+
+	data := raw.Bytes()
+	_ = binary.Write(builder, binary.LittleEndian, dataType)
+	_ = binary.Write(builder, binary.LittleEndian, uint32(len(data)))
+	builder.Write(data)
+	writeMatlabPadding(builder, len(data))
+}
+
+func writeMatlabPadding(builder *bytes.Buffer, size int) {
+	for i := 0; i < (8-size%8)%8; i++ {
+		builder.WriteByte(0)
+	}
+}
+
+func interleaveColumns(columns ...[]float64) []float64 {
+	if len(columns) == 0 {
+		return nil
+	}
+
+	rows := len(columns[0])
+	data := make([]float64, 0, rows*len(columns))
+	for _, column := range columns {
+		if len(column) < rows {
+			rows = len(column)
+		}
+	}
+
+	for col := 0; col < len(columns); col++ {
+		for row := 0; row < rows; row++ {
+			data = append(data, columns[col][row])
+		}
+	}
+	return data
+}
+
+const (
+	miINT8         = 1
+	miUINT32       = 6
+	miINT32        = 5
+	miDOUBLE       = 9
+	miMATRIX       = 14
+	mxDOUBLE_CLASS = 6
+)
