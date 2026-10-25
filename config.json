@@ -1,7 +1,6 @@
 {
     "hopkinsonList": {
         "20mm压杆": {
-            "bridgeType": "HALF",
             "diameter": "20",
             "incidentCalibrationFactor": "0.011111",
             "material": "钢",
@@ -11,7 +10,6 @@
             "youngs": "210"
         },
         "test": {
-            "bridgeType": "HALF",
             "diameter": "20",
             "incidentCalibrationFactor": "0.011111",
             "material": "钢",

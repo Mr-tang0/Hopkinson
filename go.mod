@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/mjibson/go-dsp v0.0.0-20180508042940-11479a337f12
-	github.com/wailsapp/wails/v2 v2.15.0
+	github.com/wailsapp/wails/v2 v2.16.0
 )
 
 require (

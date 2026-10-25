@@ -20,12 +20,9 @@ type SignalProcessor struct {
 	OffsetINC   float64 //基线处理后的偏移
 	OffsetTRANS float64
 
-	LowPassFreq  float64 //滤波频率
-	HighPassFreq float64
-
-	//频谱信号
-	FFTInc   ShpbSignal
-	FFTTrans ShpbSignal
+	// 高频滤波（低通）配置，入射波与透射波分别设置
+	IncFilter   FilterConfig
+	TransFilter FilterConfig
 
 	//截取的波形
 	IncWaveCrop   ShpbSignal
@@ -46,10 +43,11 @@ func NewSignalProcessor() *SignalProcessor {
 
 		CropDataStartAndEnd: make(map[string]*Range),
 
-		LowPassFreq:  0,
-		HighPassFreq: 0,
-		IncWave:      ShpbSignal{X: []float64{}, Y: []float64{}},
-		TransWave:    ShpbSignal{X: []float64{}, Y: []float64{}},
+		IncWave:   ShpbSignal{X: []float64{}, Y: []float64{}},
+		TransWave: ShpbSignal{X: []float64{}, Y: []float64{}},
+
+		IncFilter:   FilterConfig{Type: "none"},
+		TransFilter: FilterConfig{Type: "none"},
 	}
 }
 
@@ -265,15 +263,25 @@ func (sp *SignalProcessor) AlignManul(data map[string]float64) []ShpbSignal {
 }
 
 type CalculationResult struct {
-	StressStrain   ShpbSignal `json:"stress_strain"`    // 应力-应变
-	StrainTime     ShpbSignal `json:"strain_time"`      // 应变-时间
-	StrainRateTime ShpbSignal `json:"strain_rate_time"` // 应变率-时间
-	StressTime     ShpbSignal `json:"stress_time"`      // 应力-时间
-	IncWaveCrop    ShpbSignal `json:"inc_wave_crop"`    // 入射波-裁剪
-	RefWaveCrop    ShpbSignal `json:"ref_wave_crop"`    // 反射波-裁剪
-	TransWaveCrop  ShpbSignal `json:"trans_wave_crop"`  // 透射波-裁剪
+	StressStrain   ShpbSignal `json:"stress_strain"`    // 工程应力-工程应变
+	StrainTime     ShpbSignal `json:"strain_time"`      // 工程应变-时间
+	StrainRateTime ShpbSignal `json:"strain_rate_time"` // 工程应变率-时间
+	StressTime     ShpbSignal `json:"stress_time"`      // 工程应力-时间
+
+	TrueStressStrain   ShpbSignal `json:"true_stress_strain"`    // 真应力-真应变
+	TrueStrainTime     ShpbSignal `json:"true_strain_time"`      // 真应变-时间
+	TrueStrainRateTime ShpbSignal `json:"true_strain_rate_time"` // 真应变率-时间
+	TrueStressTime     ShpbSignal `json:"true_stress_time"`      // 真应力-时间
+
+	IncWaveCrop   ShpbSignal `json:"inc_wave_crop"`   // 入射波-裁剪
+	RefWaveCrop   ShpbSignal `json:"ref_wave_crop"`   // 反射波-裁剪
+	TransWaveCrop ShpbSignal `json:"trans_wave_crop"` // 透射波-裁剪
 }
 
+// Calculate 按 MATLAB(PHop) 版本的核心算法计算
+//   σ = E·(A_bar/A_sample)·ε_t
+//   ε̇ = 2C0/L·(ε_i-ε_t)   (双波法)
+//   ε = Σ dt·ε̇            (右端点欧拉积分)
 func (sp *SignalProcessor) Calculate(calculationType string) CalculationResult {
 	compression := 1.0
 	if sp.Hopkinson.Mode == "compression" {
@@ -285,7 +293,14 @@ func (sp *SignalProcessor) Calculate(calculationType string) CalculationResult {
 	wRef := sp.RefWaveCrop
 	wTrans := sp.TransWaveCrop
 
+	// 三路波形长度可能不完全一致，取最短长度避免越界
 	n := len(wInc.Y)
+	if len(wRef.Y) < n {
+		n = len(wRef.Y)
+	}
+	if len(wTrans.Y) < n {
+		n = len(wTrans.Y)
+	}
 	if n == 0 {
 		return CalculationResult{}
 	}
@@ -296,37 +311,14 @@ func (sp *SignalProcessor) Calculate(calculationType string) CalculationResult {
 		dt = wInc.X[1] - wInc.X[0]
 	}
 
-	// 应变片产生的应变 (直接使用标定系数)
-	// strain = V * coeff * mode_sign
+	// 标定系数已包含桥路/增益等全部硬件因素，这里直接乘电压得到应变，
+	// 与 MATLAB 的 stc1/stc2 用法一致，不再按桥型做二次除法。
+	incidentCoeff := sp.Hopkinson.IncidentCoefficient
+	transmittedCoeff := sp.Hopkinson.TransmittedCoefficient
+
 	strainInc := make([]float64, n)
 	strainRef := make([]float64, n)
 	strainTrans := make([]float64, n)
-
-	if sp.Hopkinson.EnableDispersionCorrection == true {
-		corrector := &DispersionCorrector{
-			SoundVelocity:        sp.Hopkinson.SoundVelocity,
-			PoissonRatio:         sp.Hopkinson.PoissonRatio,                        // 需要根据杆材料设置, 如钢: 0.29
-			Radius:               sp.Hopkinson.Diameter / 2.0 / 1000.0,             // mm -> m
-			IncPropagationDist:   sp.Hopkinson.IncidentGaugeToEndDistance / 1000.0, // 应变片到试样端面的距离 (m), 需实测
-			TransPropagationDist: sp.Hopkinson.TransmitGaugeToEndDistance / 1000.0, // 应变片到试样端面的距离 (m), 需实测
-		}
-
-		// 应用矫正 (传入应变信号)
-		strainInc, strainRef, strainTrans = corrector.DispersionCorrectStrains(
-			strainInc, strainRef, strainTrans, dt,
-		)
-	}
-
-	incidentCoeff := sp.Hopkinson.IncidentCoefficient
-	transmittedCoeff := sp.Hopkinson.TransmittedCoefficient
-	switch sp.Hopkinson.BridgeType {
-	case "HALF":
-		incidentCoeff = incidentCoeff / 2.0
-		transmittedCoeff = transmittedCoeff / 2.0
-	case "QURT":
-		incidentCoeff = incidentCoeff / 4.0
-		transmittedCoeff = transmittedCoeff / 4.0
-	}
 
 	for i := 0; i < n; i++ {
 		strainInc[i] = wInc.Y[i] * incidentCoeff * compression
@@ -334,10 +326,31 @@ func (sp *SignalProcessor) Calculate(calculationType string) CalculationResult {
 		strainTrans[i] = wTrans.Y[i] * transmittedCoeff * compression
 	}
 
-	// 试样参数
+	// 色散修正必须在应变换算完成之后进行
+	if sp.Hopkinson.EnableDispersionCorrection {
+		corrector := &DispersionCorrector{
+			SoundVelocity:        sp.Hopkinson.SoundVelocity,
+			PoissonRatio:         sp.Hopkinson.PoissonRatio,
+			Radius:               sp.Hopkinson.Diameter / 2.0 / 1000.0,
+			IncPropagationDist:   sp.Hopkinson.IncidentGaugeToEndDistance / 1000.0,
+			TransPropagationDist: sp.Hopkinson.TransmitGaugeToEndDistance / 1000.0,
+		}
+		strainInc, strainRef, strainTrans = corrector.DispersionCorrectStrains(
+			strainInc, strainRef, strainTrans, dt,
+		)
+	}
+
+	// 试样参数：与 MATLAB 一致，优先使用实测截面积 as
 	sampleLengthM := sp.Sample.Length / 1000.0 // mm -> m
-	// 面积比 = (杆直径 / 试样直径)^2
-	areaRatio := math.Pow(sp.Hopkinson.Diameter/sp.Sample.Diameter, 2)
+	barArea := math.Pi * math.Pow(sp.Hopkinson.Diameter/2.0, 2.0)
+	sampleArea := sp.Sample.Area
+	if sampleArea <= 0 {
+		sampleArea = math.Pi * math.Pow(sp.Sample.Diameter/2.0, 2.0)
+	}
+	areaRatio := 0.0
+	if sampleArea > 0 {
+		areaRatio = barArea / sampleArea
+	}
 
 	// 常数准备
 	E := sp.Hopkinson.YoungSPa * 1e9
@@ -347,9 +360,8 @@ func (sp *SignalProcessor) Calculate(calculationType string) CalculationResult {
 	engStrainRate := make([]float64, n)
 
 	switch calculationType {
-	case "incAndTrans": // 入射+透射 (两波法)
+	case "incAndTrans": // 入射+透射 (两波法，MATLAB 默认算法)
 		for i := 0; i < n; i++ {
-
 			engStressMpa[i] = E * areaRatio * strainTrans[i] / 1e6
 			engStrainRate[i] = (2 * C / sampleLengthM) * (strainInc[i] - strainTrans[i])
 		}
@@ -365,20 +377,59 @@ func (sp *SignalProcessor) Calculate(calculationType string) CalculationResult {
 			engStressMpa[i] = 0.5 * E * areaRatio * (strainInc[i] + strainTrans[i] + strainRef[i]) / 1e6
 			engStrainRate[i] = (C / sampleLengthM) * (strainInc[i] - strainRef[i] - strainTrans[i])
 		}
+
+	default:
+		return CalculationResult{}
 	}
 
-	// 计算工程应变 (速率积分)
-	engStrain := CumTrapz(engStrainRate, dt)
+	// 工程应变：MATLAB 使用右端点欧拉积分
+	engStrain := CumulativeEuler(engStrainRate, dt)
 
-	// 结果
+	// 真应力/真应变：MATLAB 由未平滑的工程量计算
+	trueStrain := make([]float64, n)
+	trueStrainRate := make([]float64, n)
+	trueStressMpa := make([]float64, n)
+	for i := 0; i < n; i++ {
+		ratio := 1.0 + engStrain[i]
+		if ratio < 1e-6 {
+			ratio = 1e-6
+		}
+		trueStrain[i] = math.Log(ratio)
+		trueStressMpa[i] = engStressMpa[i] * ratio
+		trueStrainRate[i] = engStrainRate[i] / ratio
+	}
+
+	// 结果平滑：对应 MATLAB 的 smooth(x, n/spanfactor, 'sgolay')，
+	// spanfactor 默认为 10，MATLAB 会把偶数窗宽 +1 调整为奇数。
+	// MATLAB 对工程量与真值共 6 条曲线分别独立平滑。
+	const resultSpanFactor = 10
+	span := n / resultSpanFactor
+	if span%2 == 0 {
+		span++
+	}
+	if span >= 5 {
+		engStrain = SavgolSmooth(engStrain, span, 2)
+		engStrainRate = SavgolSmooth(engStrainRate, span, 2)
+		engStressMpa = SavgolSmooth(engStressMpa, span, 2)
+		trueStrain = SavgolSmooth(trueStrain, span, 2)
+		trueStrainRate = SavgolSmooth(trueStrainRate, span, 2)
+		trueStressMpa = SavgolSmooth(trueStressMpa, span, 2)
+	}
+
+	timeAxis := wInc.X[:n]
+
 	sp.Result = CalculationResult{
-		StrainTime:     ShpbSignal{X: wInc.X, Y: engStrain},
-		StrainRateTime: ShpbSignal{X: wInc.X, Y: engStrainRate},
-		StressTime:     ShpbSignal{X: wInc.X, Y: engStressMpa},
-		StressStrain:   ShpbSignal{X: engStrain, Y: engStressMpa},
-		IncWaveCrop:    sp.IncWaveCrop,
-		RefWaveCrop:    sp.RefWaveCrop,
-		TransWaveCrop:  sp.TransWaveCrop,
+		StrainTime:         ShpbSignal{X: timeAxis, Y: engStrain},
+		StrainRateTime:     ShpbSignal{X: timeAxis, Y: engStrainRate},
+		StressTime:         ShpbSignal{X: timeAxis, Y: engStressMpa},
+		StressStrain:       ShpbSignal{X: engStrain, Y: engStressMpa},
+		TrueStrainTime:     ShpbSignal{X: timeAxis, Y: trueStrain},
+		TrueStrainRateTime: ShpbSignal{X: timeAxis, Y: trueStrainRate},
+		TrueStressTime:     ShpbSignal{X: timeAxis, Y: trueStressMpa},
+		TrueStressStrain:   ShpbSignal{X: trueStrain, Y: trueStressMpa},
+		IncWaveCrop:        sp.IncWaveCrop,
+		RefWaveCrop:        sp.RefWaveCrop,
+		TransWaveCrop:      sp.TransWaveCrop,
 	}
 	return sp.Result
 }

@@ -3,6 +3,8 @@ package backend
 import (
 	"math"
 	"math/cmplx"
+
+	"github.com/mjibson/go-dsp/fft"
 )
 
 // DispersionCorrector 色散矫正器
@@ -44,174 +46,70 @@ func (dc *DispersionCorrector) PochhammerChreeSolver(nu float64, F float64) floa
 }
 
 // FrequencyCorrection 对单个信号进行频域色散矫正
+// 把应变片位置测到的波形还原为试样端面处、按一维声速传播的波形：
+//
+//	u_corr(ω) = u_meas(ω) * exp[i·ω·Δz·(1/C0 - 1/Cp)]
+//
+// 其中相位项同时包含：物理传播延迟 Δz/Cp 的补偿，以及按名义一维波速
+// 对齐时间轴所需的 Δz/C0 提前量。负号约定与 go-dsp 的 FFT(IFFT) 一致。
+//
 // propagationDist: 应变片到目标端面的距离 (m)
 func (dc *DispersionCorrector) FrequencyCorrection(timeSignal []float64, dt float64, propagationDist float64) []float64 {
 	n := len(timeSignal)
-	if n == 0 {
+	if n < 2 || dt <= 0 || dc.SoundVelocity <= 0 {
+		return timeSignal
+	}
+	// 距离为 0 时无需矫正
+	if math.Abs(propagationDist) < 1e-12 {
 		return timeSignal
 	}
 
-	// Step 1: FFT - 将时域信号转换到频域
-	complexSignal := make([]complex128, n)
+	// 补零到不小于 2n 的 2 的幂，避免相位旋转造成循环卷绕
+	nPad := 1
+	for nPad < 2*n {
+		nPad <<= 1
+	}
+
+	complexSignal := make([]complex128, nPad)
 	for i := 0; i < n; i++ {
 		complexSignal[i] = complex(timeSignal[i], 0)
 	}
+	freqSignal := fft.FFT(complexSignal)
 
-	// 执行FFT
-	freqSignal := dc.fft(complexSignal)
+	// 频率分辨率（按补零后的长度计算）
+	df := 1.0 / (float64(nPad) * dt)
 
-	// 频率分辨率
-	df := 1.0 / (float64(n) * dt)
-
-	// Step 2-4: 对每个频率分量进行相位矫正
-	for i := 0; i < n; i++ {
+	// 逐频率分量做相位矫正（负频率按对称关系单独处理）
+	for i := 0; i < nPad; i++ {
 		freq := float64(i) * df
-
-		// 只处理正频率分量 (i < n/2)
-		if i > n/2 {
-			// 负频率分量: 共轭对称, 自动处理
+		if i > nPad/2 {
+			freq = -float64(nPad-i) * df
+		}
+		if freq == 0 {
 			continue
 		}
 
-		// 归一化频率 F = f*a/C₀
-		F := freq * dc.Radius / dc.SoundVelocity
+		// 归一化频率 F = |f|·a/C0
+		F := math.Abs(freq) * dc.Radius / dc.SoundVelocity
 
-		// 计算归一化相速度 C = Cp/C₀
+		// 归一化相速度 C = Cp/C0
 		C := dc.PochhammerChreeSolver(dc.PoissonRatio, F)
-
-		// 如果C接近1, 不需要矫正
-		if math.Abs(C-1.0) < 1e-6 {
+		if C <= 0 {
 			continue
 		}
 
-		// 计算相位偏移: φ' = (C₀/Cp - 1) * (2πfΔz/C₀)
-		// 即: φ' = (1/C - 1) * (2πfΔz/C₀)
-		phiPrime := (1.0/C - 1.0) * (2.0 * math.Pi * freq * propagationDist / dc.SoundVelocity)
-
-		// 矫正相位: φ_corr = φ - φ'
-		currentPhase := cmplx.Phase(freqSignal[i])
-		currentMag := cmplx.Abs(freqSignal[i])
-
-		// 应用相位矫正 (对于正频率)
-		correctedPhase := currentPhase - phiPrime
-		freqSignal[i] = cmplx.Rect(currentMag, correctedPhase)
-
-		// 对于负频率, 取共轭以保持信号为实数
-		if i > 0 && i < n/2 {
-			j := n - i
-			freqSignal[j] = cmplx.Conj(freqSignal[i])
-		}
+		// 相位补偿量 φ = ω·Δz·(1/C0 - 1/Cp) = ω·Δz/C0·(1 - 1/C)
+		phi := 2.0 * math.Pi * freq * propagationDist / dc.SoundVelocity * (1.0 - 1.0/C)
+		freqSignal[i] *= cmplx.Exp(complex(0, phi))
 	}
 
-	// Step 5: IFFT - 将矫正后的频域信号转换回时域
-	correctedSignal := dc.ifft(freqSignal)
-
-	// 提取实部
+	// 频域 -> 时域，取前 n 点
+	correctedSignal := fft.IFFT(freqSignal)
 	result := make([]float64, n)
 	for i := 0; i < n; i++ {
 		result[i] = real(correctedSignal[i])
 	}
-
 	return result
-}
-
-// fft 快速傅里叶变换 (Cooley-Tukey迭代实现)
-// 要求 n 必须是2的幂
-func (dc *DispersionCorrector) fft(x []complex128) []complex128 {
-	n := len(x)
-
-	// 如果n是0或1, 直接返回
-	if n <= 1 {
-		return x
-	}
-
-	// 检查n是否为2的幂, 如果不是则补零
-	actualN := dc.nextPowerOfTwo(n)
-	if actualN != n {
-		// 补零到 actualN
-		padded := make([]complex128, actualN)
-		copy(padded, x)
-		x = padded
-		n = actualN
-	}
-
-	// 位反转置换 (迭代实现)
-	result := make([]complex128, n)
-	copy(result, x)
-
-	// 位反转
-	j := 0
-	for i := 1; i < n; i++ {
-		bit := n >> 1
-		for j&bit != 0 {
-			j ^= bit
-			bit >>= 1
-		}
-		j ^= bit
-		if i < j {
-			result[i], result[j] = result[j], result[i]
-		}
-	}
-
-	// 迭代蝶形运算
-	length := 2
-	for length <= n {
-		// 计算旋转因子
-		theta := -2.0 * math.Pi / float64(length)
-		wlen := cmplx.Exp(complex(0, theta))
-
-		for i := 0; i < n; i += length {
-			w := complex(1, 0)
-			half := length >> 1
-			for j := 0; j < half; j++ {
-				u := result[i+j]
-				v := result[i+j+half] * w
-				result[i+j] = u + v
-				result[i+j+half] = u - v
-				w *= wlen
-			}
-		}
-		length <<= 1
-	}
-
-	return result
-}
-
-// ifft 逆快速傅里叶变换
-func (dc *DispersionCorrector) ifft(x []complex128) []complex128 {
-	n := len(x)
-
-	// 取共轭, 执行FFT, 再取共轭并除以n
-	conj := make([]complex128, n)
-	for i := 0; i < n; i++ {
-		conj[i] = cmplx.Conj(x[i])
-	}
-
-	fftResult := dc.fft(conj)
-
-	result := make([]complex128, n)
-	for i := 0; i < n; i++ {
-		result[i] = cmplx.Conj(fftResult[i]) / complex(float64(n), 0)
-	}
-
-	return result
-}
-
-// nextPowerOfTwo 返回大于等于n的最小2的幂
-func (dc *DispersionCorrector) nextPowerOfTwo(n int) int {
-	if n <= 0 {
-		return 1
-	}
-	// 如果n已经是2的幂, 直接返回
-	if n&(n-1) == 0 {
-		return n
-	}
-	// 否则找到下一个2的幂
-	power := 1
-	for power < n {
-		power <<= 1
-	}
-	return power
 }
 
 // DispersionCorrectStrains 对三个应变信号进行矫正

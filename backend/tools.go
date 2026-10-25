@@ -169,17 +169,209 @@ func cropSlice(src *ShpbSignal, start int, length int) ShpbSignal {
 	}
 }
 
-// CumTrapz 梯形数值积分
-func CumTrapz(y []float64, dx float64) []float64 {
+// CumulativeEuler 右端点欧拉累积积分，与 MATLAB 版本
+// strain(i) = strain(i-1) + dt * strain_r(i) 完全一致
+func CumulativeEuler(y []float64, dx float64) []float64 {
 	n := len(y)
 	if n == 0 {
 		return []float64{}
 	}
 	result := make([]float64, n)
-	result[0] = 0 // initial=0
+	result[0] = y[0] * dx
 	for i := 1; i < n; i++ {
-		// 梯形公式: (y[i-1] + y[i]) * dx / 2
-		result[i] = result[i-1] + (y[i-1]+y[i])*dx/2.0
+		result[i] = result[i-1] + y[i]*dx
 	}
 	return result
+}
+
+// SavgolSmooth 对信号进行 Savitzky-Golay 平滑
+// 对应 MATLAB: smooth(x, span, 'sgolay')，默认多项式阶数为 2
+// span 会自动调整为不超过信号长度的奇数
+func SavgolSmooth(y []float64, span int, order int) []float64 {
+	n := len(y)
+	if n == 0 {
+		return []float64{}
+	}
+	out := make([]float64, n)
+	copy(out, y)
+
+	if span < 3 || n < 3 {
+		return out
+	}
+	if order < 0 {
+		order = 2
+	}
+	if span > n {
+		span = n
+	}
+	// 与 MATLAB smooth 一致：偶数窗宽 +1 调整为奇数
+	if span%2 == 0 {
+		if span < n {
+			span++
+		} else {
+			span--
+		}
+	}
+	if span < 3 {
+		return out
+	}
+	if order >= span {
+		order = span - 1
+	}
+
+	half := span / 2
+
+	// 中间点：使用以当前点为中心的对称窗口
+	centerWeights := savgolWeights(span, order, half)
+	if centerWeights == nil {
+		return out
+	}
+	for i := half; i < n-half; i++ {
+		val := 0.0
+		base := i - half
+		for j, w := range centerWeights {
+			val += w * y[base+j]
+		}
+		out[i] = val
+	}
+
+	// 头部：固定使用前 span 个点，等价于 MATLAB sgolayfilt 的边缘处理
+	for i := 0; i < half; i++ {
+		weights := savgolWeights(span, order, i)
+		if weights == nil {
+			continue
+		}
+		val := 0.0
+		for j, w := range weights {
+			val += w * y[j]
+		}
+		out[i] = val
+	}
+
+	// 尾部：固定使用最后 span 个点
+	for i := n - half; i < n; i++ {
+		center := span - 1 - (n - 1 - i)
+		weights := savgolWeights(span, order, center)
+		if weights == nil {
+			continue
+		}
+		val := 0.0
+		base := n - span
+		for j, w := range weights {
+			val += w * y[base+j]
+		}
+		out[i] = val
+	}
+
+	return out
+}
+
+// savgolWeights 计算 Savitzky-Golay 拟合在窗口内 center 处的权重
+func savgolWeights(m int, order int, center int) []float64 {
+	if m <= 0 || center < 0 || center >= m {
+		return nil
+	}
+	if order >= m {
+		order = m - 1
+	}
+	size := order + 1
+
+	// 构造正规方程 A^T A
+	ata := make([][]float64, size)
+	for i := range ata {
+		ata[i] = make([]float64, size)
+	}
+	powers := make([]float64, 2*size-1)
+	for j := 0; j < m; j++ {
+		t := float64(j - center)
+		powers[0] = 1
+		for p := 1; p < len(powers); p++ {
+			powers[p] = powers[p-1] * t
+		}
+		for a := 0; a < size; a++ {
+			for b := 0; b < size; b++ {
+				ata[a][b] += powers[a+b]
+			}
+		}
+	}
+
+	// 求解 (A^T A) * sol = e0，得到逆矩阵第 0 列
+	rhs := make([]float64, size)
+	rhs[0] = 1
+	sol := solveLinearSystem(ata, rhs)
+	if sol == nil {
+		return nil
+	}
+
+	weights := make([]float64, m)
+	for j := 0; j < m; j++ {
+		t := float64(j - center)
+		val := 0.0
+		p := 1.0
+		for a := 0; a < size; a++ {
+			val += sol[a] * p
+			p *= t
+		}
+		weights[j] = val
+	}
+	return weights
+}
+
+// solveLinearSystem 高斯消元求解线性方程组（部分主元）
+func solveLinearSystem(a [][]float64, b []float64) []float64 {
+	n := len(a)
+	if n == 0 {
+		return nil
+	}
+
+	// 复制，避免修改传入矩阵
+	mat := make([][]float64, n)
+	for i := 0; i < n; i++ {
+		if len(a[i]) != n {
+			return nil
+		}
+		mat[i] = make([]float64, n+1)
+		copy(mat[i], a[i])
+		mat[i][n] = b[i]
+	}
+
+	for col := 0; col < n; col++ {
+		// 选主元
+		pivot := col
+		for row := col + 1; row < n; row++ {
+			if math.Abs(mat[row][col]) > math.Abs(mat[pivot][col]) {
+				pivot = row
+			}
+		}
+		if math.Abs(mat[pivot][col]) < 1e-12 {
+			return nil
+		}
+		mat[col], mat[pivot] = mat[pivot], mat[col]
+
+		// 归一化主元行
+		div := mat[col][col]
+		for j := col; j <= n; j++ {
+			mat[col][j] /= div
+		}
+
+		// 消去其余行
+		for row := 0; row < n; row++ {
+			if row == col {
+				continue
+			}
+			factor := mat[row][col]
+			if factor == 0 {
+				continue
+			}
+			for j := col; j <= n; j++ {
+				mat[row][j] -= factor * mat[col][j]
+			}
+		}
+	}
+
+	sol := make([]float64, n)
+	for i := 0; i < n; i++ {
+		sol[i] = mat[i][n]
+	}
+	return sol
 }

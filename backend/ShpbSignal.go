@@ -1,22 +1,8 @@
 package backend
 
-import (
-	"math"
-	"math/cmplx"
-
-	"github.com/mjibson/go-dsp/fft"
-)
-
 type ShpbSignal struct {
 	X []float64
 	Y []float64
-}
-
-func (s *ShpbSignal) getDT() float64 {
-	if len(s.X) < 2 {
-		return 0.000001 // 默认 1MHz 采样率的间隔
-	}
-	return (s.X[100] - s.X[0]) / 100
 }
 
 // 指定向量进行基线校准
@@ -25,47 +11,6 @@ func (s *ShpbSignal) ApplyBaseline(offset float64) {
 	for i := range s.Y {
 		s.Y[i] -= offset
 	}
-}
-
-// LowPassFilter 低通滤波：允许低于截止频率的信号通过，消除高频噪声
-func (s *ShpbSignal) ApplyLowPassFilter(cutoff float64) {
-	if len(s.Y) == 0 || cutoff <= 0 {
-		return
-	}
-
-	dt := s.getDT()
-	// 计算平滑系数 alpha = dt / (RC + dt) = 2π * dt * f / (2π * dt * f + 1)
-	rc := 1.0 / (2 * math.Pi * cutoff)
-	alpha := dt / (rc + dt)
-
-	newY := make([]float64, len(s.Y))
-	newY[0] = s.Y[0]
-
-	for i := 1; i < len(s.Y); i++ {
-		// y[i] = α * x[i] + (1-α) * y[i-1]
-		newY[i] = alpha*s.Y[i] + (1-alpha)*newY[i-1]
-	}
-	s.Y = newY
-}
-
-// HighPassFilter 高通滤波：允许高于截止频率的信号通过，消除基线漂移或低频干扰
-func (s *ShpbSignal) ApplyHighPassFilter(cutoff float64) {
-	if len(s.Y) == 0 || cutoff <= 0 {
-		return
-	}
-
-	dt := s.getDT()
-	rc := 1.0 / (2 * math.Pi * cutoff)
-	alpha := rc / (rc + dt)
-
-	newY := make([]float64, len(s.Y))
-	newY[0] = s.Y[0]
-
-	for i := 1; i < len(s.Y); i++ {
-		// y[i] = α * (y[i-1] + x[i] - x[i-1])
-		newY[i] = alpha * (newY[i-1] + s.Y[i] - s.Y[i-1])
-	}
-	s.Y = newY
 }
 
 // 截取片段
@@ -123,42 +68,7 @@ func (s *ShpbSignal) CropSignal(startX float64, endX float64) *ShpbSignal {
 	}
 }
 
-// fft
-func (s *ShpbSignal) FFT() *ShpbSignal {
-	N := len(s.Y)
-	if N < 2 {
-		return &ShpbSignal{}
-	}
-
-	sumDt := 0.0
-	for i := 1; i < N; i++ {
-		sumDt += (s.X[i] - s.X[i-1])
-	}
-	avgDt := sumDt / float64(N-1)
-	Y := fft.FFTReal(s.Y)
-
-	halfN := N/2 + 1
-	freqsPos := make([]float64, halfN)
-	magnitude := make([]float64, halfN)
-
-	for i := 0; i < halfN; i++ {
-		freqsPos[i] = float64(i) / (float64(N) * avgDt)
-
-		mag := cmplx.Abs(Y[i])
-
-		if i == 0 {
-			magnitude[i] = mag / float64(N)
-		} else {
-			magnitude[i] = (mag * 2.0) / float64(N)
-		}
-	}
-
-	return &ShpbSignal{
-		X: freqsPos,
-		Y: magnitude,
-	}
-}
-
+// DeepCopy 深拷贝信号，避免显示数据与原始数据互相影响
 func (s *ShpbSignal) DeepCopy() ShpbSignal {
 	// 必须为 Y 轴重新分配独立的内存空间
 	newY := make([]float64, len(s.Y))

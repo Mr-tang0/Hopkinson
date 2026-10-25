@@ -48,15 +48,6 @@
         <input type="number" id="soundVelocity" v-model.number="form.SoundVelocity" :disabled="!isEditable" placeholder="请输入声速" step="1" min="0" required>
       </div>
 
-      <div class="sample-form-group">
-        <label for="bridgeType">桥类型*</label>
-        <select id="bridgeType" v-model="form.BridgeType" :disabled="!isEditable" required>
-          <option value="QURT">1/4桥</option>
-          <option value="HALF">半桥</option>
-          <option value="FULL">全桥</option>
-        </select>
-      </div>
-
       <!-- <div class="sample-form-row">
         <div class="sample-form-group">
           <label for="gageFactor">Gage因子*</label>
@@ -71,11 +62,11 @@
       <div class="sample-form-row">
         <div class="sample-form-group">
           <label for="incidentCalibrationFactor">入射杆标定系数*</label>
-          <input type="number" id="incidentCalibrationFactor" v-model.number="form.IncidentCoefficient" :disabled="!isEditable" placeholder="请输入入射杆标定系数" step="0.0001" min="0" required>
+          <input type="number" id="incidentCalibrationFactor" v-model.number="form.IncidentCoefficient" :disabled="!isEditable" placeholder="请输入入射杆标定系数" step="0.000001" min="0" required>
         </div>
         <div class="sample-form-group">
           <label for="transmittedCalibrationFactor">透射杆标定系数*</label>
-          <input type="number" id="transmittedCalibrationFactor" v-model.number="form.TransmittedCoefficient" :disabled="!isEditable" placeholder="请输入透射杆标定系数" step="0.0001" min="0" required>
+          <input type="number" id="transmittedCalibrationFactor" v-model.number="form.TransmittedCoefficient" :disabled="!isEditable" placeholder="请输入透射杆标定系数" step="0.000001" min="0" required>
         </div>
       </div>
 
@@ -135,7 +126,6 @@ const defaultForm = {
   Diameter: 14.5,
   YoungSPa: 210,
   SoundVelocity: 5190,
-  BridgeType: 'HALF',
   IncidentCoefficient: 1.0,
   TransmittedCoefficient: 1.0,
   EnableDispersionCorrection: false,
@@ -193,7 +183,6 @@ const handleModelChange = () => {
     form.Diameter = data.Diameter;
     form.YoungSPa = data.YoungSPa;
     form.SoundVelocity = data.SoundVelocity;
-    form.BridgeType = data.BridgeType;
     form.IncidentCoefficient = data.IncidentCoefficient;
     form.TransmittedCoefficient = data.TransmittedCoefficient;
     form.EnableDispersionCorrection = !!data.EnableDispersionCorrection;

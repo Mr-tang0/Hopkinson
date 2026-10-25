@@ -8,7 +8,7 @@ import {
   SaveSampleDetails, 
   SaveHopkinsonDetails,
   BaselineCorrection, 
-  SpectrumFilter,
+  SetFilterConfig,
   ManulAlign,
   TimeAlign,
   StartCalculate,
@@ -16,17 +16,17 @@ import {
   GetLatestRelease
 } from '../wailsjs/go/main/App';
 
-import { BrowserOpenURL } from '../wailsjs/runtime'
+import { BrowserOpenURL, WindowMinimise, WindowToggleMaximise, Quit } from '../wailsjs/runtime'
 
 import MessageContainer from './components/MessageContainer.vue';
 import HopkinsonModal from './components/HopkinsonModal.vue';
 import SampleModal from './components/SampleModal.vue';
 import About from './components/About.vue'; 
+import logoImg from './assets/images/logo.jpg'; 
 
 
 // --- 1. 全局状态 ---
 // UI 状态
-const isLeftCollapsed = ref(false);
 const isAboutVisible = ref(false);
 const showSerialChooseModal = ref(false);
 const showNewHopkinsonModal = ref(false);
@@ -37,7 +37,7 @@ const showUpdateModal = ref(false);
 const chartRef = ref(null);
 let myChart = null;
 const currentTab = ref('原始波形');
-const chartTabs = ref(['原始波形', '频谱图', '时域对齐', '计算结果']);
+const chartTabs = ref(['原始波形', '时域对齐', '计算结果']);
 
 // 点击固定点
 const clickedPoint = ref(null);  // { x, y, seriesName, color, chartX, chartY }
@@ -48,8 +48,10 @@ const selectedType = ref('incident');
 const range = reactive({ start: 0, end: 0 });
 
 // 参数配置
-const filterParams = reactive({ low: 0, high: 180000 });
 const waveParams = reactive({ inc: 0, trans: 0 });
+// 高频滤波参数：入射波与透射波分别设置
+const incFilter = reactive({ type: 'none', cutoff: 100000 });
+const transFilter = reactive({ type: 'none', cutoff: 100000 });
 const alignMethod = ref("gb");
 const alignOffsetParams = reactive({ inc: 0, trans: 0, ref: 0 });
 const calcMethod = ref("incAndTrans");
@@ -68,27 +70,24 @@ const transFileName = ref('选择透射波');
 const chartDataMap = reactive({
   '原始波形': {
     xlabel: '时间 (s)', ylabel: '振幅 (V)',
-    curves: [{ name: '入射波', x: [], y: [], color: '#ef4444' }, { name: '透射波', x: [], y: [], color: '#3b82f6' }]
-  },
-  '频谱图': {
-    xlabel: '频率 (Hz)', ylabel: '幅度 (dB)',
-    curves: [{ name: '入射波频谱', x: [], y: [], color: '#8b5cf6' }, { name: '透射波频谱', x: [], y: [], color: '#f59e0b' }]
+    curves: [{ name: '入射波', x: [], y: [], color: '#E53E3E' }, { name: '透射波', x: [], y: [], color: '#3182CE' }]
   },
   '时域对齐': {
     xlabel: '对齐时间 (s)', ylabel: '振幅 (V)',
     curves: [
-      { name: '入射波', x: [], y: [], color: '#ef4444' },
-      { name: '反射波', x: [], y: [], color: '#10b981' },
-      { name: '透射波', x: [], y: [], color: '#3b82f6' }
+      { name: '入射波', x: [], y: [], color: '#E53E3E' },
+      { name: '反射波', x: [], y: [], color: '#38A169' },
+      { name: '透射波', x: [], y: [], color: '#3182CE' }
     ]
   },
   '计算结果': {
     xlabel: '应变 (ε)', ylabel: '应力 (σ/MPa)',
     curves: [
-      { name: '应力-应变曲线', x: [], y: [], color: '#f59e0b' },
-      { name: '应力-时间曲线', x: [], y: [], color: '#3b82f6' },
-      { name: '应变-时间曲线', x: [], y: [], color: '#10b981' },
-      { name: '应变率-时间曲线', x: [], y: [], color: '#10b981' }
+      { name: '工程应力-应变曲线', x: [], y: [], color: '#D69E2E' },
+      { name: '应力-时间曲线', x: [], y: [], color: '#3182CE' },
+      { name: '应变-时间曲线', x: [], y: [], color: '#38A169' },
+      { name: '应变率-时间曲线', x: [], y: [], color: '#38A169' },
+      { name: '真应力-真应变曲线', x: [], y: [], color: '#E53E3E' }
     ]
 
   }
@@ -210,7 +209,7 @@ const showChart = async (tabName) => {
       },
       right: 40,
       top: 50,
-      iconStyle: { borderColor: '#94a3b8' }
+      iconStyle: { borderColor: '#A0AEC0' }
     },
     legend: { bottom: 10 },
     grid: { top: '15%', left: '10%', right: '10%', bottom: '15%', containLabel: true },
@@ -284,22 +283,6 @@ const loadData = async () => {
       chartDataMap['原始波形'].curves[1].x = result.transWave.X;
       chartDataMap['原始波形'].curves[1].y = result.transWave.Y;
 
-      const maxFreq = 500000;
-      const filterFFT = (x, y) => {
-        const newX = [], newY = [];
-        for (let i = 0; i < x.length && x[i] <= maxFreq; i++) {
-          newX.push(x[i]);
-          newY.push(y[i]);
-        }
-        return { x: newX, y: newY };
-      };
-      const incFFTFiltered = filterFFT(result.incFFT.X, result.incFFT.Y);
-      const transFFTFiltered = filterFFT(result.transFFT.X, result.transFFT.Y);
-
-      chartDataMap['频谱图'].curves = [
-        { name: '入射波频谱', x: incFFTFiltered.x, y: incFFTFiltered.y, color: '#8b5cf6' },
-        { name: '透射波频谱', x: transFFTFiltered.x, y: transFFTFiltered.y, color: '#ec4899' }
-      ];
       showChart('原始波形');
     }
     notify(result.message, result.success ? "success" : "error");
@@ -331,19 +314,32 @@ const confirmRange = async () => {
 
 
 //新建样品和杆信息
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[c]));
+
+// 以表格方式渲染参数面板（标签列 + 数值列）
+const renderParamPanel = (id, rows) => {
+  const display = document.getElementById(id);
+  if (!display) return;
+
+  const items = rows.map(([label, value]) =>
+    `<tr><td class="param-label">${escapeHtml(label)}</td><td class="param-value">${escapeHtml(value)}</td></tr>`
+  ).join('');
+
+  display.innerHTML = `<table class="param-table"><tbody>${items}</tbody></table>`;
+};
+
 const handleSampleSave = async(data) => { 
   const result = await SaveSampleDetails(toRaw(data));
   if (result) {
-    const display = document.getElementById('sampleDisplay');
-    if (display) {
-      display.innerText = `样品参数：
-      样品号: ${data.Number}
-      样品名: ${data.Name}
-      样品材质: ${data.Material}
-      样品长: ${data.Length}
-      样品直径: ${data.Diameter}
-      `;
-    }
+    renderParamPanel('sampleDisplay', [
+      ['样品号', data.Number],
+      ['样品名', data.Name],
+      ['样品材质', data.Material],
+      ['样品长度', `${data.Length} mm`],
+      ['样品直径', `${data.Diameter} mm`],
+    ]);
   }
 };
 
@@ -351,24 +347,20 @@ const handleBarSave = async(data) => {
   const result = await SaveHopkinsonDetails(toRaw(data));
 
   if (result) {
-    const display = document.getElementById('rodParameters');
-    if (display) {
-      display.innerText = `杆参数：
-      杆型号：${data.Type}
-      杆模式：${data.Mode}
-      杆材质：${data.Material}
-      直径：${data.Diameter} mm
-      模量：${data.YoungSPa} N/mm²
-      波速：${data.SoundVelocity}m/s
-      BridgeType: ${data.BridgeType}
-      入射杆标定系数：${data.IncidentCoefficient}
-      透射杆标定系数：${data.TransmittedCoefficient}
-      泊松比：${data.PoissonRatio ?? ''}
-      入射波应变片到端面距离：${data.IncidentGaugeToEndDistance ?? ''}
-      透射波应变片据端面距离：${data.TransmitGaugeToEndDistance ?? ''}
-      启用波修正参数：${data.EnableDispersionCorrection ? '是' : '否'}
-      `;
-    }
+    renderParamPanel('rodParameters', [
+      ['杆型号', data.Type],
+      ['杆模式', data.Mode],
+      ['杆材质', data.Material],
+      ['直径', `${data.Diameter} mm`],
+      ['模量', `${data.YoungSPa} GPa`],
+      ['波速', `${data.SoundVelocity} m/s`],
+      ['入射杆标定系数', data.IncidentCoefficient],
+      ['透射杆标定系数', data.TransmittedCoefficient],
+      ['泊松比', data.PoissonRatio ?? ''],
+      ['入射应变片距端面', data.IncidentGaugeToEndDistance ?? ''],
+      ['透射应变片距端面', data.TransmitGaugeToEndDistance ?? ''],
+      ['启用波修正参数', data.EnableDispersionCorrection ? '是' : '否'],
+    ]);
   }
 
 };
@@ -394,23 +386,25 @@ const syncWaveParams = async () => {
   notify(result.Message, result.Success ? "success" : "error");
 };
 
-const syncFilterParams = async () => {
-  const data = toRaw(filterParams);
-  const result = await SpectrumFilter(data);
-  if (result.Success) { 
-    const targetChart = chartDataMap['原始波形'];
-     result.Waves.forEach((wave, index) => {
-        if (targetChart.curves[index]) {
-          targetChart.curves[index] = {
-            ...targetChart.curves[index],
-            x: wave.X,
-            y: wave.Y
-          };
-        }
-      });
-    showChart('原始波形');
-    notify(result.Message, "success");
+// 应用高频滤波（入射波与透射波各自独立）
+const applyFilter = async (channel) => {
+  const cfg = channel === 'inc' ? incFilter : transFilter;
+  if (cfg.type !== 'none' && (!cfg.cutoff || cfg.cutoff <= 0)) {
+    notify("请输入有效的高频截止频率", "warning");
+    return;
   }
+
+  const result = await SetFilterConfig(channel, cfg.type, cfg.cutoff);
+  if (result.Success) {
+    const curveIndex = channel === 'inc' ? 0 : 1;
+    chartDataMap['原始波形'].curves[curveIndex] = {
+      ...chartDataMap['原始波形'].curves[curveIndex],
+      x: [...result.Wave.X],
+      y: [...result.Wave.Y]
+    };
+    showChart('原始波形');
+  }
+  notify(result.Message, result.Success ? "success" : "error");
 };
 
 const syncAlignOffset = async () => { 
@@ -486,6 +480,9 @@ const startCalculation = async () => {
       chartDataMap['计算结果'].curves[3].x = result.strain_rate_time.X;
       chartDataMap['计算结果'].curves[3].y = result.strain_rate_time.Y;
 
+      chartDataMap['计算结果'].curves[4].x = result.true_stress_strain.X;
+      chartDataMap['计算结果'].curves[4].y = result.true_stress_strain.Y;
+
 
       showChart('计算结果');
       
@@ -534,11 +531,6 @@ const exitBrushMode = () => {
 };
 
 
-const toggleSidebar = () => {
-  isLeftCollapsed.value = !isLeftCollapsed.value;
-  setTimeout(() => myChart?.resize(), 310);
-};
-
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Control' && !isCtrlPressed.value && myChart) {
     isCtrlPressed.value = true;
@@ -578,7 +570,12 @@ const doDownload = (source) => {
   showUpdateModal.value = false;
 };
 
-// --- 6. 生命周期 ---
+// --- 6. 自定义标题栏窗口控制 ---
+const minimizeWindow = () => WindowMinimise();
+const toggleMaximize = () => WindowToggleMaximise();
+const closeWindow = () => Quit();
+
+// --- 7. 生命周期 ---
 onMounted(async () => {
   initChart();
   window.addEventListener('resize', () => myChart?.resize());
@@ -598,17 +595,21 @@ provide('globalNotify', notify);
     <MessageContainer ref="msgBoxRef" />
     <About v-model="isAboutVisible" />
 
-    <aside class="sidebar left-sidebar" :class="{ 'collapsed': isLeftCollapsed }">
-      <div class="collapse-trigger" @click="toggleSidebar">
-        <span class="arrow-icon">{{ isLeftCollapsed ? '▶' : '◀' }}</span>
+    <header class="title-bar" @dblclick="toggleMaximize"> 
+      <div class="title-bar-left" @click="isAboutVisible = true" title="关于">
+        <img :src="logoImg" class="logo-icon" alt="logo" />
+        <span class="title-text">PIMS Hopkinson Bar 数据处理软件</span>
       </div>
+      <div class="title-bar-controls">
+        <button class="win-btn" title="最小化" @click="minimizeWindow">&#x2212;</button>
+        <button class="win-btn" title="最大化" @click="toggleMaximize">&#x25A1;</button>
+        <button class="win-btn close" title="关闭" @click="closeWindow">&#x2715;</button>
+      </div>
+    </header>
 
-      <div class="sidebar-content" v-show="!isLeftCollapsed">
-        <div class="brand" @click="isAboutVisible = true" style="cursor: pointer;">
-          <div class="logo-icon">SHPB</div>
-          <h2>Hopkinson</h2>
-        </div>
-        
+    <div class="content">
+      <aside class="sidebar left-sidebar">
+        <div class="sidebar-content">
         <section class="config-group">
           <h3 class="section-title">📁 数据加载</h3>
           <div class="upload-card">
@@ -633,12 +634,10 @@ provide('globalNotify', notify);
             <button class = "action-btn" @click="showNewHopkinsonModal = true">新建杆参数</button>
             <div id="rodParameters" class="sample-display">杆参数：未设置</div>
         </div>
-
-        <div class="hint-text">收起此栏以进行详细分析 →</div>
       </div>
     </aside>
 
-    <main class="main-content" @click="isLeftCollapsed=true">
+    <main class="main-content">
       <nav class="chart-tabs">
         <button 
           v-for="t in chartTabs" 
@@ -667,49 +666,56 @@ provide('globalNotify', notify);
       </div>
     </main>
 
-    <aside class="sidebar right-sidebar" :class="{ 'auto-hidden': !isLeftCollapsed }">
-      <div class="sidebar-content" v-show="isLeftCollapsed">
+    <aside class="sidebar right-sidebar">
+      <div class="sidebar-content">
         
         <section class="config-group">
-          <h3 class="section-title">📊 数据调整</h3>
-          
           <div class="control-card">
             <label>基线调整</label>
-            <div class="input-item">
-              <span class="sub-label">入射波调整: {{ waveParams.inc/1000.0 }} V</span>
-              <div class="slider-group">
-                <input type="range" v-model.number="waveParams.inc" min="-1000" max="1000" @change="syncWaveParams" />
-                <input type="number" v-model.number="waveParams.inc" class="mini-input" @keyup.enter="syncWaveParams" />
+            <div class="input-item baseline-input">
+              <span class="sub-label">入射波调整</span>
+              <div class="number-row">
+                <input type="number" v-model.number="waveParams.inc" class="mini-input" @keyup.enter="syncWaveParams" @change="syncWaveParams" />
                 <span class="unit-label">mV</span>
               </div>
             </div>
-            
-            <div class="input-item">
-              <span class="sub-label">透射波调整: {{ waveParams.trans/1000.0 }} V</span>
-              <div class="slider-group">
-                <input type="range" v-model.number="waveParams.trans" min="-1000" max="1000" @change="syncWaveParams" />
-                <input type="number" v-model.number="waveParams.trans" class="mini-input" @keyup.enter="syncWaveParams" />
+
+            <div class="input-item baseline-input">
+              <span class="sub-label">透射波调整</span>
+              <div class="number-row">
+                <input type="number" v-model.number="waveParams.trans" class="mini-input" @keyup.enter="syncWaveParams" @change="syncWaveParams" />
                 <span class="unit-label">mV</span>
               </div>
             </div>
           </div>
 
           <div class="control-card">
-            <label>滤波参数</label>
+            <label>高频滤波</label>
+
             <div class="input-item">
-              <span class="sub-label">低频截止: {{ filterParams.low }} Hz</span>
-              <div class="slider-group">
-                <input type="range" v-model.number="filterParams.low" min="0" max="1000" @change="syncFilterParams" />
-                <input type="number" v-model.number="filterParams.low" class="mini-input" @keyup.enter="syncFilterParams" />
+              <span class="sub-label">入射波</span>
+              <select class="modern-select" v-model="incFilter.type" @change="applyFilter('inc')">
+                <option value="none">不滤波</option>
+                <option value="butterworth">巴特沃斯低通</option>
+                <option value="chebyshev">切比雪夫低通</option>
+                <option value="fir">汉明窗 FIR 低通</option>
+              </select>
+              <div v-if="incFilter.type !== 'none'" class="filter-cutoff">
+                <input type="number" v-model.number="incFilter.cutoff" class="mini-input" step="1000" min="0" @keyup.enter="applyFilter('inc')" @change="applyFilter('inc')" />
                 <span class="unit-label">Hz</span>
               </div>
             </div>
 
             <div class="input-item">
-              <span class="sub-label">高频截止: {{ filterParams.high }} Hz</span>
-              <div class="slider-group">
-                <input type="range" v-model.number="filterParams.high" min="0" max="500000" @change="syncFilterParams" />
-                <input type="number" v-model.number="filterParams.high" class="mini-input" @keyup.enter="syncFilterParams" />
+              <span class="sub-label">透射波</span>
+              <select class="modern-select" v-model="transFilter.type" @change="applyFilter('trans')">
+                <option value="none">不滤波</option>
+                <option value="butterworth">巴特沃斯低通</option>
+                <option value="chebyshev">切比雪夫低通</option>
+                <option value="fir">汉明窗 FIR 低通</option>
+              </select>
+              <div v-if="transFilter.type !== 'none'" class="filter-cutoff">
+                <input type="number" v-model.number="transFilter.cutoff" class="mini-input" step="1000" min="0" @keyup.enter="applyFilter('trans')" @change="applyFilter('trans')" />
                 <span class="unit-label">Hz</span>
               </div>
             </div>
@@ -728,22 +734,25 @@ provide('globalNotify', notify);
             <div v-if="alignMethod=='manual'" class="sub-panel">
 
               <div class="input-item">
-                <span class="sub-label">入射波:
-                  <input type="range" v-model.number="alignOffsetParams.inc" min="-1000" max="1000" @change="syncAlignOffset" />
-                  <input type="number" v-model.number="alignOffsetParams.inc" class="mini-input" @keyup.enter="syncAlignOffset" />
-                </span>
+                <span class="sub-label">入射波</span>
+                <div class="number-row">
+                  <input type="number" v-model.number="alignOffsetParams.inc" class="mini-input expanded-input" @keyup.enter="syncAlignOffset" @change="syncAlignOffset" />
+                  <span class="unit-label">点</span>
+                </div>
               </div>
               <div class="input-item">
-                <span class="sub-label">反射波:
-                  <input type="range" v-model.number="alignOffsetParams.ref" min="-1000" max="1000" @change="syncAlignOffset" />
-                  <input type="number" v-model.number="alignOffsetParams.ref" class="mini-input" @keyup.enter="syncAlignOffset" />
-                </span>
+                <span class="sub-label">反射波</span>
+                <div class="number-row">
+                  <input type="number" v-model.number="alignOffsetParams.ref" class="mini-input expanded-input" @keyup.enter="syncAlignOffset" @change="syncAlignOffset" />
+                  <span class="unit-label">点</span>
+                </div>
               </div>
               <div class="input-item">
-                <span class="sub-label">透射波:
-                  <input type="range" v-model.number="alignOffsetParams.trans" min="-1000" max="1000" @change="syncAlignOffset" />
-                  <input type="number" v-model.number="alignOffsetParams.trans" class="mini-input" @keyup.enter="syncAlignOffset" />
-                </span>
+                <span class="sub-label">透射波</span>
+                <div class="number-row">
+                  <input type="number" v-model.number="alignOffsetParams.trans" class="mini-input expanded-input" @keyup.enter="syncAlignOffset" @change="syncAlignOffset" />
+                  <span class="unit-label">点</span>
+                </div>
               </div>
               
 
@@ -757,7 +766,6 @@ provide('globalNotify', notify);
         </section>
 
         <section class="config-group">
-          <h3 class="section-title">💾 数据计算与保存</h3>
           <div class="control-card highlight">
             <label>计算方法</label>
             <div class="input-item">
@@ -785,6 +793,7 @@ provide('globalNotify', notify);
 
       </div>
     </aside>
+    </div>
   </div>
 
   <div v-if="showSerialChooseModal" class="modal-overlay">
@@ -843,17 +852,95 @@ provide('globalNotify', notify);
 <style scoped>
 .app-wrapper {
   display: flex;
+  flex-direction: column;
   width: 100vw;
   height: 100vh;
-  background-color: #f1f5f9;
+  background-color: #f5f5f5;
   overflow: hidden;
   user-select: none;
+}
+
+/* 自定义标题栏 */
+.title-bar {
+  --wails-draggable: drag;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #4A5568;
+  color: #f8fafc;
+  padding-left: 12px;
+  border-bottom: 1px solid #353F4E;
+  z-index: 20;
+}
+
+.title-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.logo-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  object-fit: cover;
+  display: block;
+}
+
+.title-text {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #f8fafc;
+}
+
+.title-bar-controls {
+  --wails-draggable: no-drag;
+  display: flex;
+  align-self: stretch;
+  height: 100%;
+  margin-left: auto;
+}
+
+.win-btn {
+  width: 46px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.win-btn:hover {
+  background: #5A6577;
+  color: #ffffff;
+}
+
+.win-btn.close:hover {
+  background: #E53E3E;
+  color: #ffffff;
+}
+
+/* 主体内容区：左侧栏 | 主内容 | 右侧栏 */
+.content {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
 }
 
 /* 侧边栏通用样式 */
 .sidebar {
   height: 100%;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   flex-shrink: 0;
   z-index: 10;
@@ -906,13 +993,9 @@ provide('globalNotify', notify);
 /* 左侧栏样式 */
 .left-sidebar { 
   width: 240px; 
-  background: #1e293b; 
+  background: #2D3748; 
   color: #f8fafc; 
   padding: 20px;
-}
-.left-sidebar.collapsed { 
-  width: 0; 
-  padding: 0; 
 }
 
 /* 右侧栏样式 */
@@ -921,44 +1004,17 @@ provide('globalNotify', notify);
   min-width: 320px;
   max-width: 320px;
   box-sizing: border-box;
-  background: #ffffff; 
+  background: #f5f6f8; 
   color: #334155; 
-  padding: 20px;
+  padding: 10px;
   border-left: 1px solid #e2e8f0;
 }
 
 .right-sidebar .sidebar-content {
   width: 100%;
+  box-sizing: border-box;
+  padding: 0 0 0 0;
 }
-
-/* 当左侧未收起时，右侧自动隐藏 */
-.right-sidebar.auto-hidden { 
-  width: 0;
-  min-width: 0;
-  max-width: 0;
-  padding: 0; 
-  border: none;
-}
-
-/* 唯一的触发按钮 */
-.collapse-trigger {
-  position: absolute;
-  top: 50%;
-  right: -30px;
-  transform: translateY(-50%);
-  width: 30px;
-  height: 150px;
-  background: #1e293b;
-  color: white;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  cursor: pointer;
-  z-index: 100;
-  border-radius: 0 8px 8px 0;
-  box-shadow: 4px 0 10px rgba(0,0,0,0.1);
-}
-.collapse-trigger:hover { background: #3b82f6; }
 
 /* 主视图 */
 .main-content {
@@ -999,7 +1055,7 @@ provide('globalNotify', notify);
 }
 .pin-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .pin-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.pin-close { margin-left: auto; color: #94a3b8; font-size: 14px; cursor: pointer; }
+.pin-close { margin-left: auto; color: #A0AEC0; font-size: 14px; cursor: pointer; }
 .pin-row { white-space: nowrap; }
 .pin-val {
   background: #6eb7e8;
@@ -1009,25 +1065,16 @@ provide('globalNotify', notify);
   user-select: all;
   cursor: text;
 }
-.pin-hint { font-size: 11px; color: #94a3b8; margin-top: 4px; text-align: right; }
+.pin-hint { font-size: 11px; color: #A0AEC0; margin-top: 4px; text-align: right; }
 
 /* UI 组件 */
-.brand { display: flex; align-items: center; gap: 10px; margin-bottom: 30px; }
-.logo-icon { 
-  background: #3b82f6; 
-  padding: 4px 8px; 
-  border-radius: 4px; 
-  font-weight: bold; 
-  font-size: 12px; 
-}
-
 .config-group{
   margin-bottom: 10px;
 }
 
 .section-title { 
   font-size: 20px; 
-  color: #94a3b8; 
+  color: #A0AEC0; 
   text-transform: uppercase; 
   margin-bottom: 12px; 
   letter-spacing: 1px; 
@@ -1048,47 +1095,94 @@ provide('globalNotify', notify);
   padding: 10px;
    border-radius: 6px; 
    border: none; 
-   background: #3b82f6; 
+   background: #3182CE; 
    color: white; 
    font-weight: 600; 
    cursor: pointer; 
 }
 
 .action-btn:hover {
-  background: #1d4ed8;
+  background: #2B6CB0;
 }
 
 .sample-display {
     margin-top: 10px;
     padding: 10px;
     border-radius: 6px;
-    text-align: center;
+    text-align: left;
     font-size: 13px;
+}
 
+.sample-display .param-table td {
+    padding: 3px 0;
+    line-height: 1.7;
+}
+
+.param-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.param-table td {
+    padding: 3px 0;
+    line-height: 1.7;
+    vertical-align: top;
+}
+
+.param-label {
+    width: 52%;
+    color: #A0AEC0;
+    text-align: left;
+}
+
+.param-value {
+    color: #f1f5f9;
+    text-align: right;
+    word-break: break-all;
 }
 
 .action-btn.big-run { 
-  background: #10b981; 
+  background: #38A169; 
 }
 .action-btn.big-run:hover {
-  background: #059669;
+  background: #2F855A;
 }
 
 .control-card { 
-  background: #f8fafc; 
-  padding: 15px; 
-  border-radius: 8px; 
+  background: #ffffff; 
+  padding: 14px 16px; 
+  border-radius: 10px; 
   border: 1px solid #e2e8f0; 
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   width: 100%;
   box-sizing: border-box;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  display: grid;
+  grid-template-columns: 1fr;
+  column-gap: 12px;
+  row-gap: 10px;
 }
 
-.control-card .action-btn {
-  margin-top: 4px;
-  margin-bottom: 8px;
-  font-size: 13px;
-  padding: 8px 12px;
+/* 卡片标题 */
+.control-card > label {
+  display: block;
+  width: calc(100% + 32px);
+  box-sizing: border-box;
+  margin: -14px -16px 0;
+  padding: 14px 28px;
+  border-radius: 10px 10px 0 0;
+  background: #edf2f7;
+  color: #2D3748;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.control-card > .action-btn {
+  width: 100%;
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 /* 最后一个元素去掉下边距 */
@@ -1114,14 +1208,37 @@ provide('globalNotify', notify);
   background: #f1f5f9;
   padding: 10px;
   border-radius: 6px;
-  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr;
+  column-gap: 12px;
+  row-gap: 8px;
 }
-.sub-label {
+/* 表单项：标题(左) + 输入控件(右) 左右排列 */
+.input-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 6px;
+  margin-bottom: 0;
+}
+.input-item > .sub-label {
+  grid-column: 1;
+  display: block;
+  margin-bottom: 0;
+  white-space: nowrap;
   font-size: 14px;
   color: #64748b;
-  display: block;
-  margin-bottom: 4px;
   text-align: left;
+}
+.input-item > :not(.sub-label) {
+  grid-column: 2;
+}
+.input-item .modern-select {
+  margin-bottom: 0;
+}
+.input-item .filter-cutoff {
+  margin-top: 0;
 }
 .flex-row {
   display: flex;
@@ -1131,31 +1248,74 @@ provide('globalNotify', notify);
 .mini-input {
   width: 60px;
   box-sizing: border-box;
-  padding: 4px;
+  padding: 6px 8px;
   border: 1px solid #cbd5e1;
   border-radius: 4px;
   font-size: 12px;
 }
 
-.slider-group {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 86px auto;
+.number-row {
+  display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.slider-group input[type="range"] {
+.number-row .mini-input {
+  width: 86px;
+}
+
+.baseline-input .number-row {
+  flex: 1;
+}
+
+.baseline-input .mini-input {
   width: 100%;
+}
+
+.sub-panel .input-item {
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 4px;
+}
+
+.sub-panel .input-item > .sub-label {
+  grid-column: 1;
+}
+
+.sub-panel .input-item > .number-row {
+  grid-column: 2;
   min-width: 0;
 }
 
-.slider-group .mini-input {
-  width: 86px;
+.sub-panel .number-row .mini-input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
 }
 
 .unit-label {
   font-size: 13px;
   color: #64748b;
+}
+
+/* 高频滤波截止频率输入 */
+.filter-cutoff {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.filter-cutoff {
+  grid-column: 1 / -1;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.filter-cutoff .mini-input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
 }
 .btn-group {
   display: flex;
@@ -1171,12 +1331,12 @@ provide('globalNotify', notify);
 }
 .progress-bar {
   height: 100%;
-  background: #10b981;
+  background: #38A169;
   transition: width 0.3s;
 }
 .highlight {
-  border: 1px solid #3b82f644;
-  background: #eff6ff;
+  border: 1px solid #3182CE66;
+  background: #ffffff;
 }
 
 /* 现代下拉框基础样式 */
@@ -1210,13 +1370,13 @@ provide('globalNotify', notify);
 
 /* 聚焦效果（蓝色光晕） */
 .modern-select:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: #3182CE;
+  box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.15);
 }
 
 /* 当 select 位于深色侧边栏（左侧）时的适配 */
 .left-sidebar .modern-select {
-  background-color: #334155;
+  background-color: #4A5568;
   border-color: #475569;
   color: #f8fafc;
   background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23f8fafc' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
@@ -1235,14 +1395,14 @@ provide('globalNotify', notify);
 }
 
 .left-sidebar .modern-select option {
-  background-color: #1e293b;
+  background-color: #2D3748;
   color: #f8fafc;
 }
 
 /* 选项卡样式 */
 .chart-tabs { display: flex; gap: 10px; }
 .tab-item { padding: 8px 16px; border: none; background: #e2e8f0; border-radius: 6px; cursor: pointer; color: #64748b; transition: 0.2s; }
-.tab-item.active { background: #3b82f6; color: white; }
+.tab-item.active { background: #3182CE; color: white; }
 
 
 .modal-overlay {

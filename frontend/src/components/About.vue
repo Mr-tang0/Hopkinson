@@ -42,8 +42,8 @@ defineEmits(['update:modelValue']);
 const appInfo = {
   name: "Hopkinson Decoder",
   author: "TangLifa",
-  version: "V1.0.4",
-  lastEdit: "2026-08-01",
+  version: "V1.0.5",
+  lastEdit: "2026-10-25",
   url: "https://mr-tang0.github.io/pims-app/apps/hopkinson_decoder/hopkinson_decoder.html"
 }
 
