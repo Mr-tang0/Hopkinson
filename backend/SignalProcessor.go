@@ -302,6 +302,21 @@ func (sp *SignalProcessor) Calculate(calculationType string) CalculationResult {
 	strainRef := make([]float64, n)
 	strainTrans := make([]float64, n)
 
+	if sp.Hopkinson.EnableDispersionCorrection == true {
+		corrector := &DispersionCorrector{
+			SoundVelocity:        sp.Hopkinson.SoundVelocity,
+			PoissonRatio:         sp.Hopkinson.PoissonRatio,                        // 需要根据杆材料设置, 如钢: 0.29
+			Radius:               sp.Hopkinson.Diameter / 2.0 / 1000.0,             // mm -> m
+			IncPropagationDist:   sp.Hopkinson.IncidentGaugeToEndDistance / 1000.0, // 应变片到试样端面的距离 (m), 需实测
+			TransPropagationDist: sp.Hopkinson.TransmitGaugeToEndDistance / 1000.0, // 应变片到试样端面的距离 (m), 需实测
+		}
+
+		// 应用矫正 (传入应变信号)
+		strainInc, strainRef, strainTrans = corrector.DispersionCorrectStrains(
+			strainInc, strainRef, strainTrans, dt,
+		)
+	}
+
 	incidentCoeff := sp.Hopkinson.IncidentCoefficient
 	transmittedCoeff := sp.Hopkinson.TransmittedCoefficient
 	switch sp.Hopkinson.BridgeType {

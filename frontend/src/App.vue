@@ -363,6 +363,10 @@ const handleBarSave = async(data) => {
       BridgeType: ${data.BridgeType}
       入射杆标定系数：${data.IncidentCoefficient}
       透射杆标定系数：${data.TransmittedCoefficient}
+      泊松比：${data.PoissonRatio ?? ''}
+      入射波应变片到端面距离：${data.IncidentGaugeToEndDistance ?? ''}
+      透射波应变片据端面距离：${data.TransmitGaugeToEndDistance ?? ''}
+      启用波修正参数：${data.EnableDispersionCorrection ? '是' : '否'}
       `;
     }
   }

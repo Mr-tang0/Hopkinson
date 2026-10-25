@@ -114,6 +114,10 @@ func (a *App) LoadConfig() (ConfigData, error) {
 		bar.SoundVelocity, _ = strconv.ParseFloat(m["soundVelocity"], 64)
 		bar.IncidentCoefficient, _ = strconv.ParseFloat(m["incidentCalibrationFactor"], 64)
 		bar.TransmittedCoefficient, _ = strconv.ParseFloat(m["transmittedCalibrationFactor"], 64)
+		bar.EnableDispersionCorrection = m["enableDispersionCorrection"] == "true"
+		bar.PoissonRatio, _ = strconv.ParseFloat(m["poissonRatio"], 64)
+		bar.IncidentGaugeToEndDistance, _ = strconv.ParseFloat(m["incidentGaugeToEndDistance"], 64)
+		bar.TransmitGaugeToEndDistance, _ = strconv.ParseFloat(m["transmitGaugeToEndDistance"], 64)
 		if bar.IncidentCoefficient == 0 && m["calibrationFactor"] != "" {
 			bar.IncidentCoefficient, _ = strconv.ParseFloat(m["calibrationFactor"], 64)
 		}
@@ -157,6 +161,10 @@ func (a *App) SaveBarConfig(name string, bar backend.HopkinsonBar) (bool, error)
 		"bridgeType":                   bar.BridgeType,
 		"incidentCalibrationFactor":    fmt.Sprintf("%v", bar.IncidentCoefficient),
 		"transmittedCalibrationFactor": fmt.Sprintf("%v", bar.TransmittedCoefficient),
+		"enableDispersionCorrection":   fmt.Sprintf("%t", bar.EnableDispersionCorrection),
+		"poissonRatio":                 fmt.Sprintf("%v", bar.PoissonRatio),
+		"incidentGaugeToEndDistance":   fmt.Sprintf("%v", bar.IncidentGaugeToEndDistance),
+		"transmitGaugeToEndDistance":   fmt.Sprintf("%v", bar.TransmitGaugeToEndDistance),
 	}
 
 	list := fullConfig["hopkinsonList"].(map[string]interface{})
