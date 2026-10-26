@@ -19,8 +19,8 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:     "Hopkinson Decoder",
-		Width:     1024,
-		Height:    768,
+		Width:     1280,
+		Height:    900,
 		Frameless: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
