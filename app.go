@@ -130,7 +130,13 @@ func (a *App) LoadConfig() (ConfigData, error) {
 	res.Sample.Name = raw.Sample["name"]
 	res.Sample.Number = raw.Sample["number"]
 	res.Sample.Material = raw.Sample["material"]
+	res.Sample.Shape = raw.Sample["shape"]
+	if res.Sample.Shape == "" {
+		res.Sample.Shape = "cylinder"
+	}
 	res.Sample.Diameter, _ = strconv.ParseFloat(raw.Sample["diameter"], 64)
+	res.Sample.CrossSectionWidth, _ = strconv.ParseFloat(raw.Sample["crossSectionWidth"], 64)
+	res.Sample.CrossSectionLength, _ = strconv.ParseFloat(raw.Sample["crossSectionLength"], 64)
 	res.Sample.Length, _ = strconv.ParseFloat(raw.Sample["length"], 64)
 	res.Sample.Area, _ = strconv.ParseFloat(raw.Sample["area"], 64)
 
@@ -217,12 +223,15 @@ func (app *App) SaveSampleConfig(sample backend.Sample) (bool, error) {
 	}
 
 	strSample := map[string]string{
-		"number":   fmt.Sprintf("%v", sample.Number),
-		"name":     sample.Name,
-		"material": sample.Material,
-		"diameter": fmt.Sprintf("%v", sample.Diameter),
-		"length":   fmt.Sprintf("%v", sample.Length),
-		"area":     fmt.Sprintf("%v", sample.Area),
+		"number":             fmt.Sprintf("%v", sample.Number),
+		"name":               sample.Name,
+		"material":           sample.Material,
+		"shape":              sample.Shape,
+		"diameter":           fmt.Sprintf("%v", sample.Diameter),
+		"crossSectionWidth":  fmt.Sprintf("%v", sample.CrossSectionWidth),
+		"crossSectionLength": fmt.Sprintf("%v", sample.CrossSectionLength),
+		"length":             fmt.Sprintf("%v", sample.Length),
+		"area":               fmt.Sprintf("%v", sample.Area),
 	}
 
 	fullConfig["sample"] = strSample
@@ -328,7 +337,6 @@ func (a *App) SetWaveRange(waveType string, start float64, end float64) CropData
 }
 
 func (a *App) SaveSampleDetails(sample backend.Sample) bool {
-	print(sample.Diameter)
 	if a.hopBar == nil {
 		return false
 	}

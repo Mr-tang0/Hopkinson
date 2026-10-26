@@ -33,14 +33,15 @@ func NewDefaultHopkinsonBar() HopkinsonBar {
 }
 
 type Sample struct {
-	Number   string  `json:"Number"`
-	Name     string  `json:"Name"`
-	Material string  `json:"Material"`
-	Diameter float64 `json:"Diameter"`
-	Length   float64 `json:"Length"`
-	// Area 试样实际截面积 (mm²)，对应 MATLAB 版本的 as。
-	// 为 0 时退化为按直径计算的圆面积。
-	Area float64 `json:"Area"`
+	Number             string  `json:"Number"`
+	Name               string  `json:"Name"`
+	Material           string  `json:"Material"`
+	Shape              string  `json:"Shape"`
+	Diameter           float64 `json:"Diameter"`
+	CrossSectionWidth  float64 `json:"CrossSectionWidth"`
+	CrossSectionLength float64 `json:"CrossSectionLength"`
+	Length             float64 `json:"Length"`
+	Area               float64 `json:"Area"`
 }
 
 // NewDefaultSample 创建默认样品参数
@@ -49,8 +50,10 @@ func NewDefaultSample() Sample {
 		Number:   "S001",
 		Name:     "待测样品",
 		Material: "待测材料",
+		Shape:    "cylinder",
 		Diameter: 6,
 		Length:   4.5,
+		Area:     9 * 3.141592653589793,
 	}
 }
 

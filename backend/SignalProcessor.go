@@ -340,16 +340,12 @@ func (sp *SignalProcessor) Calculate(calculationType string) CalculationResult {
 		)
 	}
 
-	// 试样参数：与 MATLAB 一致，优先使用实测截面积 as
+	// 试样参数：截面积由前端计算并传入
 	sampleLengthM := sp.Sample.Length / 1000.0 // mm -> m
 	barArea := math.Pi * math.Pow(sp.Hopkinson.Diameter/2.0, 2.0)
-	sampleArea := sp.Sample.Area
-	if sampleArea <= 0 {
-		sampleArea = math.Pi * math.Pow(sp.Sample.Diameter/2.0, 2.0)
-	}
 	areaRatio := 0.0
-	if sampleArea > 0 {
-		areaRatio = barArea / sampleArea
+	if sp.Sample.Area > 0 {
+		areaRatio = barArea / sp.Sample.Area
 	}
 
 	// 常数准备

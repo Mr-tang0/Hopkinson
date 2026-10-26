@@ -39,8 +39,16 @@
         >
       </div>
 
+      <div class="sample-form-group">
+        <label for="sampleShape">样品形状</label>
+        <select id="sampleShape" v-model="form.Shape">
+          <option value="cylinder">圆柱</option>
+          <option value="cuboid">立方</option>
+        </select>
+      </div>
+
       <div class="sample-form-row">
-        <div class="sample-form-group">
+        <div v-if="form.Shape === 'cylinder'" class="sample-form-group">
           <label for="sampleDiameter">截面直径ø (mm)</label>
           <input 
             type="number" 
@@ -48,11 +56,24 @@
             v-model.number="form.Diameter" 
             placeholder="请输入直径" 
             step="0.01" 
-            min="0" 
+            min="0.01"
             required
           >
         </div>
 
+        <template v-else>
+          <div class="sample-form-group">
+            <label for="sampleWidth">截面宽 (mm)</label>
+            <input type="number" id="sampleWidth" v-model.number="form.CrossSectionWidth" step="0.01" min="0.01" required>
+          </div>
+          <div class="sample-form-group">
+            <label for="sampleCrossLength">截面长度 (mm)</label>
+            <input type="number" id="sampleCrossLength" v-model.number="form.CrossSectionLength" step="0.01" min="0.01" required>
+          </div>
+        </template>
+      </div>
+
+      <div class="sample-form-row">
         <div class="sample-form-group">
           <label for="sampleLength">样品长度l (mm)</label>
           <input 
@@ -61,14 +82,14 @@
             v-model.number="form.Length" 
             placeholder="请输入长度" 
             step="0.01" 
-            min="0" 
+            min="0.01"
             required
           >
         </div>
       </div>
 
       <div class="info-tag">
-        💡 自动计算样品截面积: <strong>{{ calculatedArea }}</strong> mm²
+        自动计算样品截面积: <strong>{{ calculatedArea.toFixed(4) }}</strong> mm²
       </div>
 
       <div class="sample-button-group">
@@ -91,7 +112,10 @@ const form = reactive({
   Number: '1',
   Name: 'Fe',
   Material: '测试',
+  Shape: 'cylinder',
   Diameter: 4.5,
+  CrossSectionWidth: 4.5,
+  CrossSectionLength: 4.5,
   Length: 4.5
 });
 
@@ -103,7 +127,10 @@ onMounted(async () => {
       form.Number = res.sample.Number;
       form.Name = res.sample.Name;
       form.Material = res.sample.Material;
+      form.Shape = res.sample.Shape || 'cylinder';
       form.Diameter = res.sample.Diameter;
+      form.CrossSectionWidth = res.sample.CrossSectionWidth || 4.5;
+      form.CrossSectionLength = res.sample.CrossSectionLength || 4.5;
       form.Length = res.sample.Length;
     }
   } catch (err) {
@@ -111,15 +138,19 @@ onMounted(async () => {
   }
 });
 
-// 计算样品截面积 (用于前端展示)
 const calculatedArea = computed(() => {
-  if (!form.Diameter) return 0;
+  if (form.Shape === 'cuboid') {
+    return Number(form.CrossSectionWidth) * Number(form.CrossSectionLength);
+  }
   const r = form.Diameter / 2;
-  return (Math.PI * r * r).toFixed(4);
+  return Math.PI * r * r;
 });
 
 const handleSave = async () => {
-  if (!form.Number || !form.Diameter || !form.Length) {
+  const dimensions = form.Shape === 'cuboid'
+    ? [form.CrossSectionWidth, form.CrossSectionLength, form.Length]
+    : [form.Diameter, form.Length];
+  if (!form.Number || !form.Name || !form.Material || dimensions.some(value => !Number.isFinite(value) || value <= 0) || !Number.isFinite(calculatedArea.value) || calculatedArea.value <= 0) {
     if (notify) notify("请填写完整的样品信息", "warning");
     return;
   }
@@ -127,15 +158,13 @@ const handleSave = async () => {
   try {
     const rawData = {
       ...toRaw(form),
-      Area: parseFloat(calculatedArea.value)
+      Area: calculatedArea.value
     };
 
-    emit('save', rawData);
     const success = await SaveSampleConfig({...rawData});
-    if (success) {
-      if (notify) notify("样品参数保存成功", "success");
-    }
-    
+    if (!success) throw new Error('配置写入失败');
+    emit('save', rawData);
+    if (notify) notify("样品参数保存成功", "success");
     emit('close');
   } catch (err) {
     if (notify) notify("保存失败: " + err, "error");
@@ -190,11 +219,14 @@ label {
   font-size: 0.9rem;
 }
 
-input {
+input, select {
   padding: 10px;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   font-size: 1rem;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .info-tag {

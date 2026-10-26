@@ -30,6 +30,7 @@ import logoImg from './assets/images/logo.jpg';
 const isAboutVisible = ref(false);
 const showSerialChooseModal = ref(false);
 const showNewHopkinsonModal = ref(false);
+const hasOpenedHopkinsonModal = ref(false);
 const showNewSampleModal = ref(false);
 const showUpdateModal = ref(false);
 
@@ -314,6 +315,11 @@ const confirmRange = async () => {
 
 
 //新建样品和杆信息
+const openHopkinsonModal = () => {
+  hasOpenedHopkinsonModal.value = true;
+  showNewHopkinsonModal.value = true;
+};
+
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[c]));
@@ -337,8 +343,12 @@ const handleSampleSave = async(data) => {
       ['样品号', data.Number],
       ['样品名', data.Name],
       ['样品材质', data.Material],
+      ['样品形状', data.Shape === 'cuboid' ? '立方' : '圆柱'],
       ['样品长度', `${data.Length} mm`],
-      ['样品直径', `${data.Diameter} mm`],
+      ...(data.Shape === 'cuboid'
+        ? [['截面宽', `${data.CrossSectionWidth} mm`], ['截面长度', `${data.CrossSectionLength} mm`]]
+        : [['样品直径', `${data.Diameter} mm`]]),
+      ['截面积', `${data.Area.toFixed(4)} mm²`],
     ]);
   }
 };
@@ -631,7 +641,7 @@ provide('globalNotify', notify);
             <h3 class="section-title">⚙️ 参数设置</h3>
             <button class="action-btn" @click="showNewSampleModal = true">新建样品</button>
             <div id="sampleDisplay" class="sample-display">无样品信息</div>
-            <button class = "action-btn" @click="showNewHopkinsonModal = true">新建杆参数</button>
+            <button class = "action-btn" @click="openHopkinsonModal">新建杆参数</button>
             <div id="rodParameters" class="sample-display">杆参数：未设置</div>
         </div>
       </div>
@@ -817,7 +827,7 @@ provide('globalNotify', notify);
     </div>
   </div>
 
-  <div class="modal-overlay" v-if="showNewHopkinsonModal">
+  <div v-if="hasOpenedHopkinsonModal" v-show="showNewHopkinsonModal" class="modal-overlay">
     <HopkinsonModal 
       @close="showNewHopkinsonModal = false" 
       @save="handleBarSave" 
