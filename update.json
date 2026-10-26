@@ -1,10 +1,8 @@
 {
     "name":"Hopkinson",
-    "version":"V1.0.5",
-    "source":{
-        "github":"https://api.github.com/repos/Mr-tang0/Hopkinson/releases/latest",
-        "gitcode":"https://gitcode.com/Mr-tang0/Hopkinson.git",
-        "pims":"http://192.168.1.100:8080/Hopkinson/releases/latest"
-    },
+    "author":"TangLifa",
+    "version":"V1.0.6",
+    "lastEdit":"2026-10-26",
+    "html":"https://mr-tang0.github.io/pims-app/apps/hopkinson_decoder/hopkinson_decoder.html",
     "url":"https://api.github.com/repos/Mr-tang0/Hopkinson/releases/latest"
 }

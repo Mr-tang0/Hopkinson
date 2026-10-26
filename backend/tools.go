@@ -16,9 +16,10 @@ func parseCsvToVector(raw string) (ShpbSignal, error) {
 
 	timeVec := make([]float64, 0, len(lines))
 	valVec := make([]float64, 0, len(lines))
+	separators := strings.NewReplacer(",", " ", ";", " ")
 
 	for _, line := range lines {
-		fields := strings.Fields(strings.ReplaceAll(line, ",", " "))
+		fields := strings.Fields(separators.Replace(line))
 		if len(fields) < 2 {
 			continue
 		}

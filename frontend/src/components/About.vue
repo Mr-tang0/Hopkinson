@@ -34,17 +34,19 @@
 </template>
 
 <script setup>
+import update from '../../../update.json'
+
 // 使用 defineProps 和 defineEmits 实现 v-model 绑定
 defineProps(['modelValue']);
 defineEmits(['update:modelValue']);
 
 
 const appInfo = {
-  name: "Hopkinson Decoder",
-  author: "TangLifa",
-  version: "V1.0.5",
-  lastEdit: "2026-10-25",
-  url: "https://mr-tang0.github.io/pims-app/apps/hopkinson_decoder/hopkinson_decoder.html"
+  name: update.name,
+  author: update.author,
+  version: update.version,
+  lastEdit: update.lastEdit,
+  url: update.html
 }
 
 
